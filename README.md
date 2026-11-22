@@ -39,8 +39,20 @@ loads the demo plan fixture, and runs the full test suite. It removes its
 temporary containers and database volume on exit, including when tests fail.
 Your development database and its credentials are independent of this run.
 
-Expected: **8 passed**. On a Linux CI runner with Docker Compose and OpenSSL,
+Expected: **10 passed**. On a Linux CI runner with Docker Compose and OpenSSL,
 run `bash scripts/test-fresh-db.sh` to use the runner's default Docker context.
+
+### View launch waitlist totals
+
+With the local stack running and migration `003_launch_interest.sql` applied:
+
+```bash
+bash scripts/waitlist-counts.sh
+```
+
+The report shows counts for the United States and Nigeria, including a zero
+for either country with no signups. It includes local test signups and does
+not print email addresses.
 
 Stop (keeps your DB data):
 
