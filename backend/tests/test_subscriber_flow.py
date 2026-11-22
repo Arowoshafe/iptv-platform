@@ -74,3 +74,30 @@ def test_subscriber_sign_in_eligibility_and_sign_out(test_subscriber):
         assert client.post("/api/v1/auth/logout").status_code == 204
         assert client.get(profile).status_code == 401
         assert client.get(news, params={"country": "US"}).status_code == 401
+
+
+def test_favorites_follow_the_subscriber_across_sessions(test_subscriber):
+    email, password = test_subscriber
+    login = "/api/v1/auth/login"
+    favorites = "/api/v1/subscriber/favorites"
+    channel = favorites + "/demo-news"
+
+    def session_headers(client):
+        response = client.post(login, json={"email": email, "password": password})
+        assert response.status_code == 200
+        return {"Authorization": "Bearer " + response.json()["access_token"]}
+
+    with TestClient(app) as first, TestClient(app) as second:
+        assert first.get(favorites).status_code == 401
+        assert first.put(channel).status_code == 401
+        first.headers.update(session_headers(first))
+        assert first.get(favorites).json() == {"channel_ids": []}
+        assert first.put(favorites + "/missing").status_code == 404
+        assert first.put(channel).status_code == 204
+        assert first.put(channel).status_code == 204
+
+        second.headers.update(session_headers(second))
+        assert second.get(favorites).json() == {"channel_ids": ["demo-news"]}
+        assert second.delete(channel).status_code == 204
+        assert second.delete(channel).status_code == 204
+        assert first.get(favorites).json() == {"channel_ids": []}

@@ -139,6 +139,59 @@ def channel_eligibility(
     return {"channel_id": channel_id, "country": country, "eligible": True}
 
 
+@app.get("/api/v1/subscriber/favorites")
+def subscriber_favorites(subscriber: Annotated[dict, Depends(subscriber_profile)]):
+    try:
+        with connect_db() as conn:
+            rows = conn.execute(
+                "SELECT f.channel_code FROM subscriber_favorites AS f "
+                "JOIN subscribers AS s ON s.id = f.subscriber_id "
+                "WHERE s.email = %s ORDER BY f.channel_code",
+                (subscriber["email"],),
+            ).fetchall()
+    except (KeyError, psycopg.Error):
+        raise HTTPException(status_code=503, detail="Favorites are temporarily unavailable") from None
+
+    available = {channel["id"] for channel in CHANNELS}
+    return {"channel_ids": [row[0] for row in rows if row[0] in available]}
+
+
+@app.put("/api/v1/subscriber/favorites/{channel_id}", status_code=204)
+def save_subscriber_favorite(
+    channel_id: str,
+    subscriber: Annotated[dict, Depends(subscriber_profile)],
+):
+    if not any(channel["id"] == channel_id for channel in CHANNELS):
+        raise HTTPException(status_code=404, detail="Channel not found")
+
+    try:
+        with connect_db() as conn:
+            conn.execute(
+                "INSERT INTO subscriber_favorites (subscriber_id, channel_code) "
+                "SELECT id, %s FROM subscribers WHERE email = %s "
+                "ON CONFLICT (subscriber_id, channel_code) DO NOTHING",
+                (channel_id, subscriber["email"]),
+            )
+    except (KeyError, psycopg.Error):
+        raise HTTPException(status_code=503, detail="Favorites are temporarily unavailable") from None
+
+
+@app.delete("/api/v1/subscriber/favorites/{channel_id}", status_code=204)
+def remove_subscriber_favorite(
+    channel_id: str,
+    subscriber: Annotated[dict, Depends(subscriber_profile)],
+):
+    try:
+        with connect_db() as conn:
+            conn.execute(
+                "DELETE FROM subscriber_favorites AS f USING subscribers AS s "
+                "WHERE f.subscriber_id = s.id AND s.email = %s AND f.channel_code = %s",
+                (subscriber["email"], channel_id),
+            )
+    except (KeyError, psycopg.Error):
+        raise HTTPException(status_code=503, detail="Favorites are temporarily unavailable") from None
+
+
 @app.post("/api/v1/playback/session")
 def playback_session(_: PlaybackRequest):
     # In production, require authentication, active subscription, geo-licensed rights,
