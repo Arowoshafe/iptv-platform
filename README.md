@@ -39,7 +39,7 @@ loads the demo plan fixture, and runs the full test suite. It removes its
 temporary containers and database volume on exit, including when tests fail.
 Your development database and its credentials are independent of this run.
 
-Expected: **7 passed**. On a Linux CI runner with Docker Compose and OpenSSL,
+Expected: **8 passed**. On a Linux CI runner with Docker Compose and OpenSSL,
 run `bash scripts/test-fresh-db.sh` to use the runner's default Docker context.
 
 Stop (keeps your DB data):

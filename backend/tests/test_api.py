@@ -1,5 +1,7 @@
+from datetime import datetime, timezone
+
 from fastapi.testclient import TestClient
-from app.main import app
+from app.main import app, programme_guide
 
 client = TestClient(app)
 
@@ -22,3 +24,19 @@ def test_unknown_country_rejected():
 def test_no_unlicensed_playback():
     res = client.post('/api/v1/playback/session', json={'channel_id': 'demo-sports'})
     assert res.status_code == 403
+
+
+def test_demo_guide_rolls_over_at_midnight():
+    titles = ("First programme", "Second programme")
+    before = programme_guide(titles, datetime(2026, 1, 1, 23, 59, tzinfo=timezone.utc))
+    after = programme_guide(titles, datetime(2026, 1, 2, 0, 0, tzinfo=timezone.utc))
+    assert before["next"] == after["now"]
+    assert before["now"]["ends_at"] == before["next"]["starts_at"]
+
+    response = client.get("/api/v1/channels?country=NG")
+    assert response.status_code == 200
+    channels = response.json()["channels"]
+    assert channels
+    for channel in channels:
+        assert channel["guide"]["now"]["title"] == channel["epg_now"]
+        assert "programmes" not in channel

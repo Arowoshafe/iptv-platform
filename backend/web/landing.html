@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TV launch preview</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#09111e;color:#f0f5ff}
+*{box-sizing:border-box}body{margin:0}a{color:inherit}.wrap{width:min(1100px,calc(100% - 40px));margin:auto}
+header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:24px 0;border-bottom:1px solid #29364c}
+.brand{font-weight:800;letter-spacing:.04em;color:#7de1cd}.nav-link{color:#d3deef;text-underline-offset:4px}
+.hero{display:grid;grid-template-columns:1.35fr 1fr;gap:clamp(32px,7vw,100px);align-items:center;min-height:68vh;padding:65px 0}
+.market{font-weight:700;color:#7de1cd}.hero h1{font-size:clamp(2.8rem,6.5vw,5.6rem);letter-spacing:-.065em;line-height:.99;margin:16px 0 22px}
+p{color:#b9c9de;line-height:1.55}.hero p{max-width:49ch}.card{background:#142238;border:1px solid #34465f;border-radius:20px;padding:clamp(22px,4vw,36px)}
+h2{margin:0;font-size:1.5rem}form{display:grid;gap:12px;margin-top:22px}label{display:grid;gap:6px;font-weight:600}
+input,select,button{width:100%;font:inherit;padding:11px 12px;border-radius:8px}input,select{border:1px solid #566782;background:#0e192a;color:#f0f5ff}
+button{background:#7de1cd;color:#08201d;font-weight:800;border:0;cursor:pointer}button:disabled{opacity:.55}
+.small{font-size:.85rem}#status{margin:0}footer{padding:20px 0 34px;border-top:1px solid #29364c;color:#b9c9de;font-size:.88rem}
+@media(max-width:760px){.hero{grid-template-columns:1fr;min-height:auto;padding:44px 0}}
+</style>
+</head>
+<body>
+<header class="wrap"><span id="brand" class="brand">TV launch preview</span><a class="nav-link" href="/catalog">Open demo catalog</a></header>
+<main class="wrap hero">
+    <section>
+        <div class="market">United States and Nigeria</div>
+        <h1>Television, your way.</h1>
+        <p>We’re building a television subscription service for viewers in the U.S. and Nigeria. Register your interest as we put together the channel lineup.</p>
+    </section>
+    <section class="card" aria-labelledby="interest-title">
+        <h2 id="interest-title">Register your interest</h2>
+        <form id="interest" method="post" action="/api/v1/launch-interest">
+            <label>Email address <input name="email" type="email" autocomplete="email" maxlength="254" required></label>
+            <label>Country <select name="country" required>
+                <option value="">Choose your country</option>
+                <option value="US">United States</option>
+                <option value="NG">Nigeria</option>
+            </select></label>
+            <button type="submit" disabled>Register interest</button>
+            <p id="status" role="status"></p>
+        </form>
+        <p class="small">This local preview saves your email and selected country in its development database.</p>
+    </section>
+</main>
+<footer class="wrap">Pre-launch preview · Live channels and subscriptions are not available yet.</footer>
+<script>
+const form = document.querySelector('#interest');
+const button = form.querySelector('button');
+const status = document.querySelector('#status');
+
+form.addEventListener('submit', async event => {
+    event.preventDefault();
+    button.disabled = true;
+    status.textContent = 'Saving…';
+
+    try {
+        const response = await fetch(form.action, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(Object.fromEntries(new FormData(form))),
+        });
+        if (!response.ok) {
+            status.textContent = response.status === 422
+                ? 'Enter a valid email address and choose a country.'
+                : 'Unable to save your interest. Please try again.';
+            return;
+        }
+        form.reset();
+        status.textContent = 'Your interest was recorded.';
+    } catch {
+        status.textContent = 'Unable to reach the server. Please try again.';
+    } finally {
+        button.disabled = false;
+    }
+});
+button.disabled = false;
+
+fetch('/api/v1/config')
+    .then(response => response.ok ? response.json() : null)
+    .then(config => {
+        if (config && config.brand !== 'YOUR IPTV BRAND') {
+            document.querySelector('#brand').textContent = config.brand;
+            document.title = config.brand + ' · Launch preview';
+        }
+    })
+    .catch(() => {});
+</script>
+</body>
+</html>
