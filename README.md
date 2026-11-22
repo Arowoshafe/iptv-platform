@@ -26,14 +26,21 @@ open http://127.0.0.1:8000/
 
 The API is bound to **127.0.0.1 only**. No LAN, router or public exposure. The `db` container has no published database port.
 
-For tests:
+### Test against a fresh local database
+
+Run the full suite against a disposable Compose project:
 
 ```bash
-docker compose -f compose.yaml -f compose.local.yaml run --rm --no-deps \
-  -v "$PWD/backend/tests:/app/tests:ro" api python -m pytest -q tests
+bash scripts/test-fresh-db.sh desktop-linux
 ```
 
-Expected: **6 passed**.
+The script starts PostgreSQL, applies the SQL migrations in filename order,
+loads the demo plan fixture, and runs the full test suite. It removes its
+temporary containers and database volume on exit, including when tests fail.
+Your development database and its credentials are independent of this run.
+
+Expected: **7 passed**. On a Linux CI runner with Docker Compose and OpenSSL,
+run `bash scripts/test-fresh-db.sh` to use the runner's default Docker context.
 
 Stop (keeps your DB data):
 
