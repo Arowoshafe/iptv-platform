@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo channel guide</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#080d17;color:#eff4ff}
+*{box-sizing:border-box}body{margin:0}.shell{width:min(760px,calc(100% - 40px));margin:auto;padding:28px 0}
+a{color:#7de1cd;text-underline-offset:4px}h1{font-size:clamp(2.4rem,7vw,4.5rem);letter-spacing:-.055em;margin:24px 0 8px}
+p{color:#b9c9de;line-height:1.5}.schedule{list-style:none;margin:24px 0;padding:0;background:#111d30;border:1px solid #34445c;border-radius:14px;overflow:hidden}
+.schedule:empty{display:none}.schedule li{display:grid;grid-template-columns:minmax(95px,1fr) 2fr;gap:12px;padding:14px 18px}
+.schedule li+li{border-top:1px solid #26354e}.schedule li:first-child{background:#1b3541}.schedule time{color:#b9c9de}.day{display:block;font-size:.8rem}
+.current{display:block;color:#7de1cd;font-size:.8rem;font-weight:700;margin-top:4px}
+</style>
+</head>
+<body>
+<main class="shell">
+<a id="catalog-link" href="/catalog">Back to catalog</a>
+<h1 id="channel-name">Channel guide</h1>
+<p id="market"></p>
+<p>Demo schedule · Times shown in your device’s time zone.</p>
+<p id="status" role="status">Loading schedule…</p>
+<ol class="schedule" id="schedule" aria-label="Programmes"></ol>
+</main>
+<script>
+const params = new URLSearchParams(window.location.search);
+const country = params.get('country') || 'US';
+const channelId = params.get('channel_id');
+const status = document.querySelector('#status');
+const dayFormat = new Intl.DateTimeFormat(undefined, {weekday: 'short', month: 'short', day: 'numeric'});
+const timeFormat = new Intl.DateTimeFormat(undefined, {hour: 'numeric', minute: '2-digit'});
+document.querySelector('#catalog-link').href = '/catalog?' + new URLSearchParams({country});
+
+async function loadGuide() {
+    if (!channelId) {
+        status.textContent = 'Choose a channel in the catalog.';
+        return;
+    }
+    try {
+        const response = await fetch(
+            '/api/v1/channels/' + encodeURIComponent(channelId) + '/schedule?' + new URLSearchParams({country}),
+        );
+        if (response.status === 404 || response.status === 422) {
+            status.textContent = 'This channel is unavailable in the selected demo catalog.';
+            return;
+        }
+        if (!response.ok) throw new Error('Schedule request failed');
+        const guide = await response.json();
+        document.querySelector('#channel-name').textContent = guide.name;
+        document.querySelector('#market').textContent =
+            guide.category + ' · ' + (guide.country === 'NG' ? 'Nigeria' : 'United States');
+        document.title = guide.name + ' · Demo channel guide';
+
+        const list = document.querySelector('#schedule');
+        for (const [index, programme] of guide.programmes.entries()) {
+            const start = new Date(programme.starts_at);
+            const row = document.createElement('li');
+            const time = document.createElement('time');
+            time.dateTime = programme.starts_at;
+            time.textContent = timeFormat.format(start);
+            const day = document.createElement('span');
+            day.className = 'day';
+            day.textContent = dayFormat.format(start);
+            time.prepend(day);
+            const title = document.createElement('span');
+            title.textContent = programme.title;
+            if (index === 0) {
+                const current = document.createElement('span');
+                current.className = 'current';
+                current.textContent = 'On now';
+                title.append(current);
+            }
+            row.append(time, title);
+            list.append(row);
+        }
+        status.textContent = '';
+    } catch {
+        status.textContent = 'Unable to load the schedule. Refresh to try again.';
+    }
+}
+
+loadGuide();
+</script>
+</body>
+</html>

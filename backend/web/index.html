@@ -18,6 +18,8 @@
 <label class="favorites-filter"><input id="favorites-only" type="checkbox"> Favorites only</label>
 </div><p class="guide-note">Demo schedules · Times shown in your device’s time zone</p><section class="channels" id="channels" aria-label="Channel catalog"></section><div class="message" id="message" role="status"></div><div class="note">The production version will add commercial licensed streams, subscription payments, a programme guide, rights checks and secure playback tokens. Your country selector is a UI preview only and is <strong>not</strong> a substitute for server-enforced geo restrictions.</div><footer>Technology starter © 2026 • Not for commercial broadcast or public subscriptions</footer></main><script>
 const country = document.querySelector('#country');
+const initialCountry = new URLSearchParams(window.location.search).get('country');
+if (initialCountry === 'US' || initialCountry === 'NG') country.value = initialCountry;
 const channels = document.querySelector('#channels');
 const message = document.querySelector('#message');
 const form = document.querySelector('#sign-in');
@@ -189,7 +191,12 @@ async function loadCatalog() {
             status.className = 'access-status';
             status.setAttribute('role', 'status');
             status.textContent = 'Checking access…';
-            card.append(renderGuide(channel.guide), status, favoriteButton(channel));
+            const scheduleLink = document.createElement('a');
+            scheduleLink.href = '/catalog/channel?' + new URLSearchParams({channel_id: channel.id, country: region});
+            scheduleLink.textContent = 'View schedule';
+            scheduleLink.style.marginTop = '12px';
+            scheduleLink.setAttribute('aria-label', 'View schedule for ' + channel.name);
+            card.append(renderGuide(channel.guide), scheduleLink, status, favoriteButton(channel));
             channels.append(card);
             channelStatus(channel.id, region, token)
                 .then(text => { status.textContent = text; })
