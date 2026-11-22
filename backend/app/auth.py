@@ -6,11 +6,13 @@ import secrets
 from typing import Annotated
 
 import psycopg
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, StringConstraints
 
 router = APIRouter()
 SESSION_SECONDS = 900
+bearer = HTTPBearer(auto_error=False)
 
 
 class LoginRequest(BaseModel):
@@ -40,17 +42,21 @@ def password_matches(password: str, stored_hash: str | None) -> bool:
     return hmac.compare_digest(digest, expected) and stored_hash is not None
 
 
+def connect_db():
+    return psycopg.connect(
+    host=os.environ["DB_HOST"],
+    port=os.environ.get("DB_PORT", "5432"),
+    dbname=os.environ["DB_NAME"],
+    user=os.environ["DB_USER"],
+    password=os.environ["DB_PASSWORD"],
+    connect_timeout=3,
+)
+
+
 @router.post("/api/v1/auth/login")
 def login(body: LoginRequest, response: Response):
     try:
-        with psycopg.connect(
-            host=os.environ["DB_HOST"],
-            port=os.environ.get("DB_PORT", "5432"),
-            dbname=os.environ["DB_NAME"],
-            user=os.environ["DB_USER"],
-            password=os.environ["DB_PASSWORD"],
-            connect_timeout=3,
-        ) as conn:
+        with connect_db() as conn:
             row = conn.execute(
                 "SELECT s.id, c.password_hash FROM subscribers s "
                 "JOIN subscriber_credentials c ON c.subscriber_id = s.id "
@@ -71,3 +77,49 @@ def login(body: LoginRequest, response: Response):
 
     response.headers["Cache-Control"] = "no-store"
     return {"access_token": token, "token_type": "bearer", "expires_in": SESSION_SECONDS}
+
+
+@router.get("/api/v1/subscriber/me")
+def subscriber_profile(
+    response: Response,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+):
+    unauthorized = HTTPException(
+        status_code=401,
+        detail="A valid subscriber session is required",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    if credentials is None or len(credentials.credentials) != 43:
+        raise unauthorized
+
+    token_hash = hashlib.sha256(credentials.credentials.encode("utf-8")).digest()
+    try:
+        with connect_db() as conn:
+            rows = conn.execute(
+                """
+                SELECT s.email, eligible.code
+                FROM subscriber_sessions AS session
+                JOIN subscribers AS s ON s.id = session.subscriber_id
+                LEFT JOIN LATERAL (
+                    SELECT DISTINCT p.code
+                    FROM subscriptions AS sub
+                    JOIN plans AS p ON p.id = sub.plan_id
+                    WHERE sub.subscriber_id = s.id
+                      AND sub.status = 'active'
+                      AND p.is_active
+                      AND (sub.start_at IS NULL OR sub.start_at <= now())
+                      AND (sub.end_at IS NULL OR sub.end_at > now())
+                ) AS eligible ON TRUE
+                WHERE session.token_hash = %s AND session.expires_at > now()
+                ORDER BY eligible.code
+                """,
+                (token_hash,),
+            ).fetchall()
+    except (KeyError, psycopg.Error):
+        raise HTTPException(status_code=503, detail="Subscriber profile is temporarily unavailable") from None
+
+    if not rows:
+        raise unauthorized
+
+    response.headers["Cache-Control"] = "no-store"
+    return {"email": rows[0][0], "active_plans": [code for _, code in rows if code is not None]}
