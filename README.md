@@ -17,7 +17,9 @@ cd ~/Developer/iptv-platform
 bash scripts/check-mac.sh
 bash scripts/setup-mac.sh
 docker compose -f compose.yaml -f compose.local.yaml config --quiet
-docker compose -f compose.yaml -f compose.local.yaml up -d --build
+docker compose -f compose.yaml -f compose.local.yaml up -d --wait db
+bash scripts/migrate-db.sh desktop-linux
+docker compose -f compose.yaml -f compose.local.yaml up -d --build api
 docker compose -f compose.yaml -f compose.local.yaml ps
 curl -fsS http://127.0.0.1:8000/health
 curl -fsS http://127.0.0.1:8000/ready
@@ -25,6 +27,19 @@ open http://127.0.0.1:8000/
 ```
 
 The API is bound to **127.0.0.1 only**. No LAN, router or public exposure. The `db` container has no published database port.
+
+### Apply database upgrades locally
+
+With the local PostgreSQL container running, run:
+
+```bash
+bash scripts/migrate-db.sh desktop-linux
+```
+
+The command records each migration after it succeeds. It skips migrations
+already recorded and stops if a recorded file's checksum changes. Add new
+migration files for later changes. On the first run, the existing idempotent
+migrations can be recorded on a database that was upgraded manually.
 
 ### Test against a fresh local database
 
@@ -35,12 +50,23 @@ bash scripts/test-fresh-db.sh desktop-linux
 ```
 
 The script starts PostgreSQL, applies the SQL migrations in filename order,
-loads the demo plan fixture, and runs the full test suite. It removes its
+verifies a second run skips each recorded migration, loads the demo plan
+fixture, and runs the full test suite. It removes its
 temporary containers and database volume on exit, including when tests fail.
 Your development database and its credentials are independent of this run.
 
-Expected: **14 passed**. On a Linux CI runner with Docker Compose and OpenSSL,
+Expected: **17 passed**. On a Linux CI runner with Docker Compose and OpenSSL,
 run `bash scripts/test-fresh-db.sh` to use the runner's default Docker context.
+
+### Verify the app is ready after an upgrade
+
+After running the migration command and restarting the API, run
+`curl -fsS http://127.0.0.1:8000/ready`. A missing required table returns
+`503` with `schema-outdated`.
+
+The local API limits sign-in attempts using the request address and the
+address/email pair. When deploying behind a proxy, configure a trusted
+proxy boundary before relying on client-address limits.
 
 ### Check playback with an authorized test feed
 

@@ -313,7 +313,11 @@ form.addEventListener('submit', async event => {
             body: JSON.stringify({email: form.elements.namedItem('email').value, password: password.value}),
         });
         if (!response.ok) {
-            account.textContent = response.status === 401 ? 'Check your email and password.' : 'Sign-in is temporarily unavailable.';
+            if (response.status === 429) {
+                account.textContent = 'Too many sign-in attempts. Try again in five minutes.';
+            } else {
+                account.textContent = response.status === 401 ? 'Check your email and password.' : 'Sign-in is temporarily unavailable.';
+            }
             return;
         }
 

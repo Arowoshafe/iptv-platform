@@ -101,3 +101,18 @@ def test_favorites_follow_the_subscriber_across_sessions(test_subscriber):
         assert second.delete(channel).status_code == 204
         assert second.delete(channel).status_code == 204
         assert first.get(favorites).json() == {"channel_ids": []}
+
+
+def test_repeated_failed_logins_are_limited(test_subscriber, monkeypatch):
+    from app import auth
+
+    monkeypatch.setattr(auth, "LOGIN_EMAIL_LIMIT", 2)
+    email, password = test_subscriber
+    with TestClient(app) as client:
+        for _ in range(2):
+            response = client.post("/api/v1/auth/login", json={"email": email, "password": "wrong"})
+            assert response.status_code == 401
+
+        response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+        assert response.status_code == 429
+        assert response.headers["retry-after"] == "300"

@@ -39,28 +39,36 @@ class PlaybackRequest(BaseModel):
 def health():
     return {"status": "ok", "mode": "development-demo", "version": "0.1.0"}
 
+REQUIRED_TABLES = (
+    "public.plans",
+    "public.subscribers",
+    "public.subscriptions",
+    "public.subscriber_credentials",
+    "public.subscriber_sessions",
+    "public.subscriber_favorites",
+    "public.launch_interest",
+    "public.login_rate_limits",
+)
+
+
 @app.get("/ready")
 def ready():
-    """Development readiness: confirm that the isolated PostgreSQL container is reachable."""
+    """Verify database connectivity and the tables required by this release."""
     if not os.getenv("DB_HOST"):
         return JSONResponse(status_code=503, content={"status": "not-ready", "database": "not-configured"})
     try:
-        import psycopg
-        with psycopg.connect(
-            host=os.environ["DB_HOST"],
-            port=os.getenv("DB_PORT", "5432"),
-            dbname=os.getenv("DB_NAME", "iptv_dev"),
-            user=os.getenv("DB_USER", "iptv_app"),
-            password=os.environ["DB_PASSWORD"],
-            connect_timeout=3,
-        ) as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT 1")
-                cursor.fetchone()
-    except Exception:
-        # Do not leak database credentials or internal errors to web clients.
+        with connect_db() as conn:
+            schema_ready = conn.execute(
+                "SELECT bool_and(to_regclass(name) IS NOT NULL) FROM unnest(%s::text[]) AS tables(name)",
+                (list(REQUIRED_TABLES),),
+            ).fetchone()[0]
+    except (KeyError, psycopg.Error):
         return JSONResponse(status_code=503, content={"status": "not-ready", "database": "unavailable"})
+
+    if not schema_ready:
+        return JSONResponse(status_code=503, content={"status": "not-ready", "database": "schema-outdated"})
     return {"status": "ready", "database": "connected"}
+
 
 @app.get("/api/v1/config")
 def config():
