@@ -16,7 +16,7 @@
 <label for="channel-search">Search channels</label>
 <input class="catalog-search" id="channel-search" type="search" placeholder="Name or category" maxlength="100">
 <label class="favorites-filter"><input id="favorites-only" type="checkbox"> Favorites only</label>
-</div><p class="guide-note">Demo schedules · Times shown in your device’s time zone</p><section class="channels" id="channels" aria-label="Channel catalog"></section><div class="message" id="message" role="status"></div><div class="note">The production version will add commercial licensed streams, subscription payments, a programme guide, rights checks and secure playback tokens. Your country selector is a UI preview only and is <strong>not</strong> a substitute for server-enforced geo restrictions.</div><footer>Technology starter © 2026 • Not for commercial broadcast or public subscriptions</footer></main><script>
+</div><p class="guide-note">Demo schedules · Times shown in your device’s time zone</p><section class="channels" id="channels" aria-label="Channel catalog"></section><div class="message" id="message" role="status"></div><p id="favorites-notice" role="status" hidden></p><div class="note">The production version will add commercial licensed streams, subscription payments, a programme guide, rights checks and secure playback tokens. Your country selector is a UI preview only and is <strong>not</strong> a substitute for server-enforced geo restrictions.</div><footer>Technology starter © 2026 • Not for commercial broadcast or public subscriptions</footer></main><script>
 const country = document.querySelector('#country');
 const initialCountry = new URLSearchParams(window.location.search).get('country');
 if (initialCountry === 'US' || initialCountry === 'NG') country.value = initialCountry;
@@ -33,7 +33,43 @@ let guideTimer;
 const search = document.querySelector('#channel-search');
 const favoritesOnly = document.querySelector('#favorites-only');
 const favoritesKey = 'iptv-demo-favorites';
-const favorites = readFavorites();
+const guestFavorites = readFavorites();
+const favoritesNotice = document.querySelector('#favorites-notice');
+const pendingFavorites = new Set();
+let accountFavorites = null;
+
+function currentFavorites() {
+    return accessToken ? accountFavorites : guestFavorites;
+}
+
+function showFavoritesNotice(text) {
+    favoritesNotice.textContent = text;
+    favoritesNotice.hidden = !text;
+}
+
+async function loadAccountFavorites(token) {
+    showFavoritesNotice('Loading account favorites…');
+    try {
+        const response = await fetch('/api/v1/subscriber/favorites', {
+            headers: {Authorization: 'Bearer ' + token},
+        });
+        if (token !== accessToken) return;
+        if (response.status === 401) {
+            clearSession(token, 'Your session ended. Please sign in again.');
+            return;
+        }
+        if (!response.ok) throw new Error('Favorites request failed');
+
+        const saved = await response.json();
+        if (token !== accessToken) return;
+        accountFavorites = new Set(saved.channel_ids);
+        showFavoritesNotice('');
+        refreshFavoriteButtons();
+        filterCatalog();
+    } catch {
+        if (token === accessToken) showFavoritesNotice('Unable to load favorites. Sign out and sign in to retry.');
+    }
+}
 
 function readFavorites() {
     try {
@@ -44,10 +80,18 @@ function readFavorites() {
     }
 }
 
-function syncFavorite(button, channel) {
-    const saved = favorites.has(channel.id);
+function syncFavorite(button, channelId) {
+    const favorites = currentFavorites();
+    const saved = favorites?.has(channelId) ?? false;
+    button.disabled = favorites === null || pendingFavorites.has(channelId);
     button.setAttribute('aria-pressed', String(saved));
     button.textContent = saved ? '★ Favorite' : '☆ Favorite';
+}
+
+function refreshFavoriteButtons() {
+    for (const card of channels.children) {
+        syncFavorite(card.querySelector('.favorite'), card.dataset.channelId);
+    }
 }
 
 function filterCatalog() {
@@ -55,10 +99,11 @@ function filterCatalog() {
     if (!cards.length) return;
 
     const query = search.value.trim().toLowerCase();
+    const favorites = currentFavorites();
     let visible = 0;
     for (const card of cards) {
         const matches = card.dataset.search.includes(query);
-        const saved = favorites.has(card.dataset.channelId);
+        const saved = favorites === null || favorites.has(card.dataset.channelId);
         card.hidden = !matches || (favoritesOnly.checked && !saved);
         if (!card.hidden) visible++;
     }
@@ -73,16 +118,54 @@ function favoriteButton(channel) {
     button.className = 'favorite';
     button.type = 'button';
     button.setAttribute('aria-label', 'Favorite ' + channel.name);
-    syncFavorite(button, channel);
-    button.addEventListener('click', () => {
-        if (!favorites.delete(channel.id)) favorites.add(channel.id);
-        syncFavorite(button, channel);
+    syncFavorite(button, channel.id);
+    button.addEventListener('click', async () => {
+        const favorites = currentFavorites();
+        if (favorites === null) return;
+        const token = accessToken;
+        const saving = !favorites.has(channel.id);
+        showFavoritesNotice('');
+
+        if (token) {
+            pendingFavorites.add(channel.id);
+            refreshFavoriteButtons();
+            try {
+                const response = await fetch(
+                    '/api/v1/subscriber/favorites/' + encodeURIComponent(channel.id),
+                    {
+                        method: saving ? 'PUT' : 'DELETE',
+                        headers: {Authorization: 'Bearer ' + token},
+                    },
+                );
+                if (token !== accessToken) return;
+                if (response.status === 401) {
+                    clearSession(token, 'Your session ended. Please sign in again.');
+                    return;
+                }
+                if (response.status !== 204) throw new Error('Favorite update failed');
+            } catch {
+                if (token === accessToken) showFavoritesNotice('Unable to update this favorite. Please try again.');
+                return;
+            } finally {
+                if (token === accessToken) {
+                    pendingFavorites.delete(channel.id);
+                    refreshFavoriteButtons();
+                }
+            }
+        }
+
+        if (saving) favorites.add(channel.id);
+        else favorites.delete(channel.id);
+        refreshFavoriteButtons();
         filterCatalog();
-        if (button.closest('article').hidden) favoritesOnly.focus();
-        try {
-            localStorage.setItem(favoritesKey, JSON.stringify([...favorites]));
-        } catch {
-            message.textContent = 'Browser storage is unavailable. Favorites will last until refresh.';
+        if (button.closest('article')?.hidden) favoritesOnly.focus();
+
+        if (!token) {
+            try {
+                localStorage.setItem(favoritesKey, JSON.stringify([...favorites]));
+            } catch {
+                showFavoritesNotice('Browser storage is unavailable. Favorites will last until refresh.');
+            }
         }
     });
     return button;
@@ -108,6 +191,9 @@ function clearSession(token, notice) {
     if (token !== accessToken) return;
     clearTimeout(sessionTimer);
     accessToken = '';
+    accountFavorites = null;
+    pendingFavorites.clear();
+    showFavoritesNotice('');
     signOut.hidden = true;
     form.hidden = false;
     planStatus.hidden = true;
@@ -245,6 +331,7 @@ form.addEventListener('submit', async event => {
         );
         signOut.focus();
         loadProfile(token);
+        loadAccountFavorites(token);
         loadCatalog();
     } catch {
         account.textContent = 'Unable to sign in. Check that the API is running.';
