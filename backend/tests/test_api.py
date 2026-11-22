@@ -70,3 +70,11 @@ def test_channel_schedule_respects_territory():
     assert client.get(url, params={"country": "US"}).status_code == 404
     assert client.get(url, params={"country": "GB"}).status_code == 422
     assert client.get("/api/v1/channels/missing/schedule").status_code == 404
+
+
+def test_subscriber_catalog_exposes_browse_and_account_controls():
+    response = client.get("/catalog")
+    assert response.status_code == 200
+    for control in ("account-panel", "country", "channel-search", "favorites-only", "retry-catalog"):
+        assert f'id="{control}"' in response.text
+    assert 'href="/catalog"' in client.get("/").text
