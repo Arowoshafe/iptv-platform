@@ -40,3 +40,33 @@ def test_demo_guide_rolls_over_at_midnight():
     for channel in channels:
         assert channel["guide"]["now"]["title"] == channel["epg_now"]
         assert "programmes" not in channel
+
+
+def test_playback_tester_is_available_only_when_enabled(monkeypatch):
+    monkeypatch.delenv("ENABLE_LOCAL_PLAYLIST_TESTER", raising=False)
+    assert client.get("/playlist-tester").status_code == 404
+
+    monkeypatch.setenv("ENABLE_LOCAL_PLAYLIST_TESTER", "1")
+    response = client.get("/playlist-tester")
+    assert response.status_code == 200
+    assert "Play Apple HLS sample" in response.text
+    assert "Play test URL" in response.text
+
+
+def test_channel_schedule_has_24_contiguous_slots():
+    response = client.get("/api/v1/channels/demo-culture/schedule", params={"country": "NG"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["country"] == "NG"
+    assert data["name"] == "Demo Culture"
+    shows = data["programmes"]
+    assert len(shows) == 24
+    assert len({show["title"] for show in shows}) == 4
+    assert all(a["ends_at"] == b["starts_at"] for a, b in zip(shows, shows[1:]))
+
+
+def test_channel_schedule_respects_territory():
+    url = "/api/v1/channels/demo-culture/schedule"
+    assert client.get(url, params={"country": "US"}).status_code == 404
+    assert client.get(url, params={"country": "GB"}).status_code == 422
+    assert client.get("/api/v1/channels/missing/schedule").status_code == 404

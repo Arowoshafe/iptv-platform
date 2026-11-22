@@ -26,10 +26,10 @@ DEMO_PLAN_TERRITORIES = {"demo-us": "US", "demo-ng": "NG"}
 # Fictional stations for interface and rights-filtering tests ONLY.
 # Do NOT add third-party streams without documentary redistribution rights.
 CHANNELS = [
-    {"id": "demo-news", "name": "Demo News", "category": "News", "countries": ["US", "NG"], "programmes": ("World Update", "Headlines in Review"), "icon": "📰", "playable": False},
-    {"id": "demo-culture", "name": "Demo Culture", "category": "Culture", "countries": ["NG"], "programmes": ("Across Cultures", "Arts and Heritage"), "icon": "🎭", "playable": False},
-    {"id": "demo-lifestyle", "name": "Demo Lifestyle", "category": "Lifestyle", "countries": ["US"], "programmes": ("Everyday Living", "At Home Today"), "icon": "🌿", "playable": False},
-    {"id": "demo-sports", "name": "Demo Sports", "category": "Sports", "countries": ["US", "NG"], "programmes": ("Sports Desk", "Weekend Highlights"), "icon": "⚽", "playable": False},
+    {"id": "demo-news", "name": "Demo News", "category": "News", "countries": ["US", "NG"], "programmes": ("World Update", "Headlines in Review", "Market Brief", "The Week in Focus"), "icon": "📰", "playable": False},
+    {"id": "demo-culture", "name": "Demo Culture", "category": "Culture", "countries": ["NG"], "programmes": ("Across Cultures", "Arts and Heritage", "City Stories", "Music and Memory"), "icon": "🎭", "playable": False},
+    {"id": "demo-lifestyle", "name": "Demo Lifestyle", "category": "Lifestyle", "countries": ["US"], "programmes": ("Everyday Living", "At Home Today", "The Weekend Kitchen", "Garden Hour"), "icon": "🌿", "playable": False},
+    {"id": "demo-sports", "name": "Demo Sports", "category": "Sports", "countries": ["US", "NG"], "programmes": ("Sports Desk", "Weekend Highlights", "Match Review", "Training Ground"), "icon": "⚽", "playable": False},
 ]
 
 class PlaybackRequest(BaseModel):
@@ -70,18 +70,19 @@ def config():
 def regions():
     return [{"code": "US", "name": "United States"}, {"code": "NG", "name": "Nigeria"}]
 
-def programme_guide(titles: tuple[str, str], now: datetime):
-    start = now.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
-    next_start = start + timedelta(hours=1)
-    slot = start.hour % 2
-
+def programme_slot(titles: tuple[str, ...], start: datetime):
     return {
-        "now": {"title": titles[slot], "starts_at": start, "ends_at": next_start},
-        "next": {
-            "title": titles[1 - slot],
-            "starts_at": next_start,
-            "ends_at": next_start + timedelta(hours=1),
-        },
+        "title": titles[start.hour % len(titles)],
+        "starts_at": start,
+        "ends_at": start + timedelta(hours=1),
+    }
+
+
+def programme_guide(titles: tuple[str, ...], now: datetime):
+    start = now.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    return {
+        "now": programme_slot(titles, start),
+        "next": programme_slot(titles, start + timedelta(hours=1)),
     }
 
 
@@ -98,6 +99,25 @@ def channels(country: Country = Query(default="US")):
         }
         catalog.append({**public_channel, "epg_now": guide["now"]["title"], "guide": guide})
     return {"country": country, "channels": catalog}
+
+@app.get("/api/v1/channels/{channel_id}/schedule")
+def channel_schedule(channel_id: str, country: Country = Query(default="US")):
+    channel = next((item for item in CHANNELS if item["id"] == channel_id), None)
+    if channel is None or country not in channel["countries"]:
+        raise HTTPException(status_code=404, detail="Channel unavailable in this demo territory")
+
+    titles = channel["programmes"]
+    start = programme_guide(titles, datetime.now(timezone.utc))["now"]["starts_at"]
+    return {
+        "country": country,
+        "name": channel["name"],
+        "category": channel["category"],
+        "programmes": [
+            programme_slot(titles, start + timedelta(hours=offset))
+            for offset in range(24)
+        ],
+    }
+
 
 @app.get("/api/v1/channels/{channel_id}/eligibility")
 def channel_eligibility(
@@ -162,3 +182,8 @@ def playlist_tester():
     if os.getenv("ENABLE_LOCAL_PLAYLIST_TESTER") != "1":
         raise HTTPException(status_code=404)
     return FileResponse(WEB_DIR / "playlist-tester.html")
+
+
+@app.get("/catalog/channel", include_in_schema=False)
+def channel_guide_page():
+    return FileResponse(WEB_DIR / "channel-guide.html")

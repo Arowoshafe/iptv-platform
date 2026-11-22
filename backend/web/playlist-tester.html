@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Local playlist tester</title>
+<title>Local playback tester</title>
 <style>
 :root{color-scheme:dark;font-family:system-ui,sans-serif;background:#09111e;color:#f0f5ff}
 *{box-sizing:border-box}body{margin:0}.wrap{width:min(1120px,calc(100% - 40px));margin:auto}header{padding:22px 0;border-bottom:1px solid #34445c}
@@ -14,19 +15,28 @@ label{display:block;font-weight:650;margin-bottom:12px}input,select,button{displ
 select,button{padding:10px;border-radius:8px;border:1px solid #53677f;background:#0c1727;color:inherit}button{background:#87dfd1;color:#102522;font-weight:800;cursor:pointer}button:disabled{opacity:.55;cursor:default}
 video{display:block;width:100%;aspect-ratio:16/9;background:#03060b;border-radius:10px}#player-status,#file-status{overflow-wrap:anywhere}
 @media(max-width:720px){.grid{grid-template-columns:1fr}}
+#stream-form,.playlist-source{border-top:1px solid #34445c;margin-top:18px;padding-top:16px}
+#stream-url{color:inherit;background:#0c1727;border:1px solid #53677f;border-radius:8px;padding:10px}
 </style>
 </head>
 <body>
 <header class="wrap"><a href="/">Home</a> · <a href="/catalog">Demo catalog</a></header>
 <main class="wrap">
-<h1>Local playlist tester</h1>
-<p>Choose an authorized channel playlist. The file stays in this browser, and a stream connects only after you click Play.</p>
+<h1>Local playback tester</h1>
+<p>Play the Apple HLS sample, open an authorized test URL, or choose a channel playlist. Files and entered URLs stay in your browser. Playback connects directly to the stream source.</p>
 <div class="grid">
-<section class="panel" aria-label="Playlist controls">
+<section class="panel" aria-label="Playback sources">
+<button id="play-sample" type="button">Play Apple HLS sample</button>
+<form id="stream-form" autocomplete="off">
+<label>Authorized test URL <input id="stream-url" type="url" placeholder="https://…" maxlength="8192" required></label>
+<button type="submit">Play test URL</button>
+</form>
+<div class="playlist-source">
 <label>Playlist file <input id="file" type="file" accept=".m3u,.m3u8,audio/x-mpegurl,application/vnd.apple.mpegurl"></label>
 <p id="file-status" role="status">Choose an .m3u or .m3u8 channel list.</p>
 <label>Channel <select id="channels" disabled><option>No playlist loaded</option></select></label>
 <button id="play" type="button" disabled>Play selected channel</button>
+</div>
 </section>
 <section class="panel" aria-label="Playback">
 <video id="video" controls playsinline preload="none"></video>
@@ -41,6 +51,9 @@ const fileStatus = document.querySelector('#file-status');
 const playerStatus = document.querySelector('#player-status');
 const playButton = document.querySelector('#play');
 const video = document.querySelector('#video');
+const streamForm = document.querySelector('#stream-form');
+const streamUrl = document.querySelector('#stream-url');
+const sampleUrl = 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8';
 const mediaErrors = {
     1: 'Playback was interrupted.',
     2: 'Playback failed while fetching media. Check the feed and network.',
@@ -49,6 +62,15 @@ const mediaErrors = {
 };
 let entries = [];
 let importId = 0;
+let playbackId = 0;
+
+function parseStreamUrl(value) {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+        throw new Error('Unsupported URL');
+    }
+    return url;
+}
 
 function parsePlaylist(text) {
     if (/^\s*#EXT-X-/im.test(text)) {
@@ -68,10 +90,7 @@ function parsePlaylist(text) {
         if (line.startsWith('#')) continue;
 
         try {
-            const url = new URL(line);
-            if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
-                throw new Error('Unsupported URL');
-            }
+            const url = parseStreamUrl(line);
             channels.push({name: title || 'Channel ' + (channels.length + 1), url: url.href});
         } catch {
             skipped++;
@@ -82,6 +101,7 @@ function parsePlaylist(text) {
 }
 
 function stopPlayback() {
+    playbackId++;
     video.pause();
     video.removeAttribute('src');
     video.load();
@@ -106,7 +126,9 @@ fileInput.addEventListener('change', async () => {
         const result = parsePlaylist(text);
         if (!result.channels.length) throw new Error('No playable candidates found. Use a list with absolute HTTP or HTTPS stream URLs.');
         entries = result.channels;
-        channelSelect.replaceChildren(...entries.map((entry, index) => new Option(entry.name, String(index))));
+        const options = document.createDocumentFragment();
+        entries.forEach((entry, index) => options.append(new Option(entry.name, String(index))));
+        channelSelect.replaceChildren(options);
         channelSelect.disabled = false;
         playButton.disabled = false;
         fileStatus.textContent = 'Channels loaded: ' + entries.length +
@@ -116,10 +138,9 @@ fileInput.addEventListener('change', async () => {
     }
 });
 
-playButton.addEventListener('click', async () => {
-    const entry = entries[Number(channelSelect.value)];
-    if (!entry) return;
+async function playStream(entry) {
     stopPlayback();
+    const attempt = playbackId;
     const path = new URL(entry.url).pathname;
     if (/\.m3u8$/i.test(path) && !video.canPlayType('application/vnd.apple.mpegurl')) {
         playerStatus.textContent = 'This browser does not report native HLS support. Open the tester in Safari.';
@@ -130,9 +151,29 @@ playButton.addEventListener('click', async () => {
     try {
         await video.play();
     } catch (error) {
-        if (video.src === entry.url && !video.error && error.name !== 'AbortError') {
+        if (attempt === playbackId && !video.error && error.name !== 'AbortError') {
             playerStatus.textContent = 'Playback could not start. Check the feed and try Safari for HLS.';
         }
+    }
+}
+
+playButton.addEventListener('click', () => {
+    const entry = entries[Number(channelSelect.value)];
+    if (entry) playStream(entry);
+});
+
+document.querySelector('#play-sample').addEventListener('click', () => {
+    playStream({name: 'Apple HLS sample', url: sampleUrl});
+});
+
+streamForm.addEventListener('submit', event => {
+    event.preventDefault();
+    try {
+        const url = parseStreamUrl(streamUrl.value.trim());
+        streamForm.reset();
+        playStream({name: 'test stream', url: url.href});
+    } catch {
+        playerStatus.textContent = 'Enter an HTTP or HTTPS stream URL without a username or password in the address.';
     }
 });
 
