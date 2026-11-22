@@ -82,3 +82,17 @@ Read `docs/MAC-AWS-NEXT-STEPS.md` and `docs/FUTURE-HOME-MIGRATION.md` before dep
 - No authentication, real subscribers, subscription payments or billing webhooks.
 - No production TLS, application authorization, rate-limiting or security audit.
 - AWS production deployment not provided as a one-click script intentionally; deploying this demo to an internet-facing address would be unsafe.
+
+## Automatic merges for feature branches
+
+After this workflow is merged into the default branch, a successful push test
+run on a same-repository `feature/*` branch opens or reuses a pull request into
+`main` and requests auto-merge. Draft pull requests are left for review.
+GitHub applies the required checks and branch rules before merging.
+
+Enable merge commits and auto-merge on the repository and require the
+`test` status check on `main`. Set the Actions repository secret
+`FEATURE_MERGE_TOKEN` to a fine-grained token for this repository with
+**Contents: Read and write** and **Pull requests: Read and write**.
+Use a token owner without a ruleset bypass. The workflow does not check out
+feature code or request administrative bypass when it holds the token.
