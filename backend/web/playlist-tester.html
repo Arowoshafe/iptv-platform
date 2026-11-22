@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local playlist tester</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#09111e;color:#f0f5ff}
+*{box-sizing:border-box}body{margin:0}.wrap{width:min(1120px,calc(100% - 40px));margin:auto}header{padding:22px 0;border-bottom:1px solid #34445c}
+a{color:#87dfd1;text-underline-offset:4px}h1{font-size:clamp(2.2rem,5vw,4rem);letter-spacing:-.05em;margin:28px 0 8px}p{color:#bdcbe0;line-height:1.5}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:24px;margin:26px 0}
+.panel{background:#142238;border:1px solid #34445c;border-radius:16px;padding:20px;min-width:0}
+label{display:block;font-weight:650;margin-bottom:12px}input,select,button{display:block;width:100%;font:inherit;margin-top:7px}
+select,button{padding:10px;border-radius:8px;border:1px solid #53677f;background:#0c1727;color:inherit}button{background:#87dfd1;color:#102522;font-weight:800;cursor:pointer}button:disabled{opacity:.55;cursor:default}
+video{display:block;width:100%;aspect-ratio:16/9;background:#03060b;border-radius:10px}#player-status,#file-status{overflow-wrap:anywhere}
+@media(max-width:720px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header class="wrap"><a href="/">Home</a> · <a href="/catalog">Demo catalog</a></header>
+<main class="wrap">
+<h1>Local playlist tester</h1>
+<p>Choose an authorized channel playlist. The file stays in this browser, and a stream connects only after you click Play.</p>
+<div class="grid">
+<section class="panel" aria-label="Playlist controls">
+<label>Playlist file <input id="file" type="file" accept=".m3u,.m3u8,audio/x-mpegurl,application/vnd.apple.mpegurl"></label>
+<p id="file-status" role="status">Choose an .m3u or .m3u8 channel list.</p>
+<label>Channel <select id="channels" disabled><option>No playlist loaded</option></select></label>
+<button id="play" type="button" disabled>Play selected channel</button>
+</section>
+<section class="panel" aria-label="Playback">
+<video id="video" controls playsinline preload="none"></video>
+<p id="player-status" role="status">Use Safari on your Mac to test HLS streams.</p>
+</section>
+</div>
+</main>
+<script>
+const fileInput = document.querySelector('#file');
+const channelSelect = document.querySelector('#channels');
+const fileStatus = document.querySelector('#file-status');
+const playerStatus = document.querySelector('#player-status');
+const playButton = document.querySelector('#play');
+const video = document.querySelector('#video');
+const mediaErrors = {
+    1: 'Playback was interrupted.',
+    2: 'Playback failed while fetching media. Check the feed and network.',
+    3: 'The browser received media but could not decode it.',
+    4: 'The browser could not open the source. The feed may be unavailable or use an unsupported format.',
+};
+let entries = [];
+let importId = 0;
+
+function parsePlaylist(text) {
+    if (/^\s*#EXT-X-/im.test(text)) {
+        throw new Error('This file is an HLS stream manifest. Choose an M3U channel list containing stream URLs.');
+    }
+
+    const channels = [];
+    let title = '';
+    let skipped = 0;
+    for (const rawLine of text.split(/\r\n?|\n/)) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        if (/^#EXTINF:/i.test(line)) {
+            title = line.match(/^#EXTINF:(?:[^",]|"[^"]*")*,(.*)$/i)?.[1].trim() || '';
+            continue;
+        }
+        if (line.startsWith('#')) continue;
+
+        try {
+            const url = new URL(line);
+            if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+                throw new Error('Unsupported URL');
+            }
+            channels.push({name: title || 'Channel ' + (channels.length + 1), url: url.href});
+        } catch {
+            skipped++;
+        }
+        title = '';
+    }
+    return {channels, skipped};
+}
+
+function stopPlayback() {
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+    playerStatus.textContent = 'Use Safari on your Mac to test HLS streams.';
+}
+
+fileInput.addEventListener('change', async () => {
+    const request = ++importId;
+    const file = fileInput.files[0];
+    stopPlayback();
+    entries = [];
+    channelSelect.replaceChildren(new Option('No playlist loaded'));
+    channelSelect.disabled = true;
+    playButton.disabled = true;
+    fileStatus.textContent = 'Choose an .m3u or .m3u8 channel list.';
+    if (!file) return;
+
+    try {
+        if (file.size > 5 * 1024 * 1024) throw new Error('Choose a playlist smaller than 5 MB.');
+        const text = await file.text();
+        if (request !== importId) return;
+        const result = parsePlaylist(text);
+        if (!result.channels.length) throw new Error('No playable candidates found. Use a list with absolute HTTP or HTTPS stream URLs.');
+        entries = result.channels;
+        channelSelect.replaceChildren(...entries.map((entry, index) => new Option(entry.name, String(index))));
+        channelSelect.disabled = false;
+        playButton.disabled = false;
+        fileStatus.textContent = 'Channels loaded: ' + entries.length +
+            (result.skipped ? ' · Unsupported entries skipped: ' + result.skipped : '');
+    } catch (error) {
+        if (request === importId) fileStatus.textContent = error.message || 'Unable to read this playlist.';
+    }
+});
+
+playButton.addEventListener('click', async () => {
+    const entry = entries[Number(channelSelect.value)];
+    if (!entry) return;
+    stopPlayback();
+    const path = new URL(entry.url).pathname;
+    if (/\.m3u8$/i.test(path) && !video.canPlayType('application/vnd.apple.mpegurl')) {
+        playerStatus.textContent = 'This browser does not report native HLS support. Open the tester in Safari.';
+        return;
+    }
+    video.src = entry.url;
+    playerStatus.textContent = 'Opening ' + entry.name + '…';
+    try {
+        await video.play();
+    } catch (error) {
+        if (video.src === entry.url && !video.error && error.name !== 'AbortError') {
+            playerStatus.textContent = 'Playback could not start. Check the feed and try Safari for HLS.';
+        }
+    }
+});
+
+video.addEventListener('playing', () => { playerStatus.textContent = 'Playing.'; });
+video.addEventListener('error', () => {
+    if (video.hasAttribute('src') && video.error) {
+        const code = video.error.code;
+        playerStatus.textContent = 'Media error ' + code + ': ' +
+            (mediaErrors[code] || 'The browser could not play this stream.');
+    }
+});
+</script>
+</body>
+</html>

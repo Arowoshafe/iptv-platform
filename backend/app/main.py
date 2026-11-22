@@ -2,11 +2,16 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import re
 from typing import Annotated, Literal
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
+import psycopg
+from pydantic import BaseModel, Field
+
+from .auth import connect_db
 
 from .auth import router as auth_router
 from .auth import subscriber_profile
@@ -21,10 +26,10 @@ DEMO_PLAN_TERRITORIES = {"demo-us": "US", "demo-ng": "NG"}
 # Fictional stations for interface and rights-filtering tests ONLY.
 # Do NOT add third-party streams without documentary redistribution rights.
 CHANNELS = [
-    {"id": "demo-news", "name": "Demo News", "category": "News", "countries": ["US", "NG"], "epg_now": "World Update", "icon": "📰", "playable": False},
-    {"id": "demo-culture", "name": "Demo Culture", "category": "Culture", "countries": ["NG"], "epg_now": "Across Cultures", "icon": "🎭", "playable": False},
-    {"id": "demo-lifestyle", "name": "Demo Lifestyle", "category": "Lifestyle", "countries": ["US"], "epg_now": "Everyday Living", "icon": "🌿", "playable": False},
-    {"id": "demo-sports", "name": "Demo Sports", "category": "Sports", "countries": ["US", "NG"], "epg_now": "Sports Desk", "icon": "⚽", "playable": False},
+    {"id": "demo-news", "name": "Demo News", "category": "News", "countries": ["US", "NG"], "programmes": ("World Update", "Headlines in Review"), "icon": "📰", "playable": False},
+    {"id": "demo-culture", "name": "Demo Culture", "category": "Culture", "countries": ["NG"], "programmes": ("Across Cultures", "Arts and Heritage"), "icon": "🎭", "playable": False},
+    {"id": "demo-lifestyle", "name": "Demo Lifestyle", "category": "Lifestyle", "countries": ["US"], "programmes": ("Everyday Living", "At Home Today"), "icon": "🌿", "playable": False},
+    {"id": "demo-sports", "name": "Demo Sports", "category": "Sports", "countries": ["US", "NG"], "programmes": ("Sports Desk", "Weekend Highlights"), "icon": "⚽", "playable": False},
 ]
 
 class PlaybackRequest(BaseModel):
@@ -65,9 +70,34 @@ def config():
 def regions():
     return [{"code": "US", "name": "United States"}, {"code": "NG", "name": "Nigeria"}]
 
+def programme_guide(titles: tuple[str, str], now: datetime):
+    start = now.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    next_start = start + timedelta(hours=1)
+    slot = start.hour % 2
+
+    return {
+        "now": {"title": titles[slot], "starts_at": start, "ends_at": next_start},
+        "next": {
+            "title": titles[1 - slot],
+            "starts_at": next_start,
+            "ends_at": next_start + timedelta(hours=1),
+        },
+    }
+
+
 @app.get("/api/v1/channels")
 def channels(country: Country = Query(default="US")):
-    return {"country": country, "channels": [{k: v for k, v in c.items() if k != "countries"} for c in CHANNELS if country in c["countries"]]}
+    now = datetime.now(timezone.utc)
+    catalog = []
+    for channel in CHANNELS:
+        if country not in channel["countries"]:
+            continue
+        guide = programme_guide(channel["programmes"], now)
+        public_channel = {
+            key: value for key, value in channel.items() if key not in {"countries", "programmes"}
+        }
+        catalog.append({**public_channel, "epg_now": guide["now"]["title"], "guide": guide})
+    return {"country": country, "channels": catalog}
 
 @app.get("/api/v1/channels/{channel_id}/eligibility")
 def channel_eligibility(
@@ -95,6 +125,40 @@ def playback_session(_: PlaybackRequest):
     # device/session limits and a provider-approved token or signed CDN URL.
     raise HTTPException(status_code=403, detail="Playback unavailable: demo only. Connect a licensed provider and server-side entitlements first.")
 
+class LaunchInterestRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    country: Country
+
+
+@app.post("/api/v1/launch-interest", status_code=201)
+def register_launch_interest(body: LaunchInterestRequest):
+    email = body.email.strip().lower()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        raise HTTPException(status_code=422, detail="Enter a valid email address")
+    try:
+        with connect_db() as conn:
+            conn.execute(
+                "INSERT INTO launch_interest (email, country) VALUES (%s, %s) "
+                "ON CONFLICT (email, country) DO NOTHING",
+                (email, body.country),
+            )
+    except (KeyError, psycopg.Error):
+        raise HTTPException(status_code=503, detail="Registration is temporarily unavailable") from None
+    return {"status": "registered"}
+
+
 @app.get("/", include_in_schema=False)
 def home():
+    return FileResponse(WEB_DIR / "landing.html")
+
+
+@app.get("/catalog", include_in_schema=False)
+def catalog():
     return FileResponse(WEB_DIR / "index.html")
+
+
+@app.get("/playlist-tester", include_in_schema=False)
+def playlist_tester():
+    if os.getenv("ENABLE_LOCAL_PLAYLIST_TESTER") != "1":
+        raise HTTPException(status_code=404)
+    return FileResponse(WEB_DIR / "playlist-tester.html")
