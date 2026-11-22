@@ -20,6 +20,18 @@ class LoginRequest(BaseModel):
     password: Annotated[str, StringConstraints(min_length=1, max_length=256)]
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: Annotated[str, StringConstraints(min_length=1, max_length=256)]
+    new_password: Annotated[str, StringConstraints(min_length=12, max_length=256)]
+
+
+def password_digest(password: str, salt: bytes) -> bytes:
+    return hashlib.scrypt(
+        password.encode("utf-8"), salt=salt,
+        n=2**17, r=8, p=1, maxmem=256 * 1024 * 1024,
+    )
+
+
 def password_matches(password: str, stored_hash: str | None) -> bool:
     salt = bytes(16)
     expected = bytes(64)
@@ -35,10 +47,7 @@ def password_matches(password: str, stored_hash: str | None) -> bool:
         except ValueError:
             return False
 
-    digest = hashlib.scrypt(
-        password.encode("utf-8"), salt=salt,
-        n=2**17, r=8, p=1, maxmem=256 * 1024 * 1024,
-    )
+    digest = password_digest(password, salt)
     return hmac.compare_digest(digest, expected) and stored_hash is not None
 
 
@@ -60,7 +69,7 @@ def login(body: LoginRequest, response: Response):
             row = conn.execute(
                 "SELECT s.id, c.password_hash FROM subscribers s "
                 "JOIN subscriber_credentials c ON c.subscriber_id = s.id "
-                "WHERE s.email = %s",
+                "WHERE s.email = %s FOR SHARE OF c",
                 (body.email.lower(),),
             ).fetchone()
             if not password_matches(body.password, row[1] if row else None):
@@ -92,6 +101,53 @@ def session_token_hash(credentials: HTTPAuthorizationCredentials | None) -> byte
         raise session_required()
 
     return hashlib.sha256(credentials.credentials.encode("utf-8")).digest()
+
+
+@router.post("/api/v1/auth/change-password", status_code=204)
+def change_password(
+    body: ChangePasswordRequest,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+) -> Response:
+    token_hash = session_token_hash(credentials)
+    try:
+        with connect_db() as conn:
+            row = conn.execute(
+                "SELECT c.subscriber_id, c.password_hash "
+                "FROM subscriber_credentials AS c JOIN subscriber_sessions AS s "
+                "ON s.subscriber_id = c.subscriber_id "
+                "WHERE s.token_hash = %s AND s.expires_at > clock_timestamp() "
+                "FOR UPDATE OF c",
+                (token_hash,),
+            ).fetchone()
+            # The credentials lock may have waited for another password change.
+            if row is None or conn.execute(
+                "SELECT 1 FROM subscriber_sessions "
+                "WHERE token_hash = %s AND expires_at > clock_timestamp()",
+                (token_hash,),
+            ).fetchone() is None:
+                raise session_required()
+
+            subscriber_id, stored_hash = row
+            if not password_matches(body.current_password, stored_hash):
+                raise HTTPException(status_code=403, detail="Current password is incorrect")
+            if body.current_password == body.new_password:
+                raise HTTPException(status_code=422, detail="Choose a different new password")
+
+            salt = secrets.token_bytes(16)
+            digest = password_digest(body.new_password, salt)
+            password_hash = f"scrypt$131072$8$1${salt.hex()}${digest.hex()}"
+            conn.execute(
+                "UPDATE subscriber_credentials SET password_hash = %s WHERE subscriber_id = %s",
+                (password_hash, subscriber_id),
+            )
+            conn.execute(
+                "DELETE FROM subscriber_sessions WHERE subscriber_id = %s",
+                (subscriber_id,),
+            )
+    except (KeyError, psycopg.Error):
+        raise HTTPException(status_code=503, detail="Password change is temporarily unavailable") from None
+
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/api/v1/auth/logout", status_code=204)
