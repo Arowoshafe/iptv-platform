@@ -9,6 +9,7 @@
 <button type="submit">Sign in</button></form>
 <button id="sign-out" type="button" hidden>Sign out</button>
 <div id="account" role="status"></div>
+<div id="plan-status" role="status" hidden></div>
 </section><div class="toolbar"><label for="country">Preview catalog for</label><select id="country"><option value="US">🇺🇸 United States</option><option value="NG">🇳🇬 Nigeria</option></select></div><section class="channels" id="channels" aria-label="Channel catalog"></section><div class="message" id="message" role="status"></div><div class="note">The production version will add commercial licensed streams, subscription payments, a programme guide, rights checks and secure playback tokens. Your country selector is a UI preview only and is <strong>not</strong> a substitute for server-enforced geo restrictions.</div><footer>Technology starter © 2026 • Not for commercial broadcast or public subscriptions</footer></main><script>
 const country = document.querySelector('#country');
 const channels = document.querySelector('#channels');
@@ -16,8 +17,46 @@ const message = document.querySelector('#message');
 const form = document.querySelector('#sign-in');
 const signOut = document.querySelector('#sign-out');
 const account = document.querySelector('#account');
+const planStatus = document.querySelector('#plan-status');
 let accessToken = '';
+let sessionTimer;
 let catalogRequest = 0;
+
+function clearSession(token, notice) {
+    if (token !== accessToken) return;
+    clearTimeout(sessionTimer);
+    accessToken = '';
+    signOut.hidden = true;
+    form.hidden = false;
+    planStatus.hidden = true;
+    planStatus.textContent = '';
+    account.textContent = notice;
+    form.elements.namedItem('email').focus();
+    loadCatalog();
+}
+
+async function loadProfile(token) {
+    try {
+        const response = await fetch('/api/v1/subscriber/me', {
+            headers: {Authorization: 'Bearer ' + token},
+        });
+        if (token !== accessToken) return;
+        if (response.status === 401) {
+            clearSession(token, 'Your session ended. Please sign in again.');
+            return;
+        }
+        if (!response.ok) throw new Error('Profile request failed');
+
+        const profile = await response.json();
+        if (token !== accessToken) return;
+        account.textContent = 'Signed in as ' + profile.email;
+        planStatus.textContent = profile.active_plans.length
+            ? 'Active plans: ' + profile.active_plans.join(', ')
+            : 'No active plans';
+    } catch {
+        if (token === accessToken) planStatus.textContent = 'Unable to load active plans.';
+    }
+}
 
 async function channelStatus(channelId, region, token) {
     if (!token) return 'Sign in to check channel access';
@@ -30,7 +69,9 @@ async function channelStatus(channelId, region, token) {
     switch (response.status) {
         case 200: return 'Covered by your plan';
         case 403: return 'Unavailable with your plan in this catalog';
-        case 401: return 'Session expired. Sign out and sign in again.';
+        case 401:
+            clearSession(token, 'Your session ended. Please sign in again.');
+            return 'Sign in to check channel access';
         default: return 'Channel access could not be checked';
     }
 }
@@ -96,11 +137,19 @@ form.addEventListener('submit', async event => {
         }
 
         const session = await response.json();
-        accessToken = session.access_token;
+        const token = session.access_token;
+        accessToken = token;
         form.hidden = true;
         signOut.hidden = false;
-        account.textContent = 'Signed in as ' + form.elements.namedItem('email').value;
+        account.textContent = 'Signed in.';
+        planStatus.hidden = false;
+        planStatus.textContent = 'Loading active plans…';
+        sessionTimer = setTimeout(
+            () => clearSession(token, 'Your session ended. Please sign in again.'),
+            session.expires_in * 1000,
+        );
         signOut.focus();
+        loadProfile(token);
         loadCatalog();
     } catch {
         account.textContent = 'Unable to sign in. Check that the API is running.';
@@ -111,28 +160,24 @@ form.addEventListener('submit', async event => {
 });
 
 signOut.addEventListener('click', async () => {
+    const token = accessToken;
     signOut.disabled = true;
     account.textContent = 'Signing out…';
 
     try {
         const response = await fetch('/api/v1/auth/logout', {
             method: 'POST',
-            headers: {Authorization: 'Bearer ' + accessToken},
+            headers: {Authorization: 'Bearer ' + token},
         });
         if (response.status !== 204) throw new Error('Sign-out request failed');
     } catch {
-        account.textContent = 'Unable to sign out. Please try again.';
+        if (token === accessToken) account.textContent = 'Unable to sign out. Please try again.';
         return;
     } finally {
         signOut.disabled = false;
     }
 
-    accessToken = '';
-    signOut.hidden = true;
-    form.hidden = false;
-    account.textContent = 'Signed out.';
-    form.elements.namedItem('email').focus();
-    loadCatalog();
+    clearSession(token, 'Signed out.');
 });
 
 country.addEventListener('change', loadCatalog);
