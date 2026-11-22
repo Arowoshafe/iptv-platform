@@ -1,27 +1,138 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Streaming platform starter</title>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Channel catalog</title>
 <style>
-:root{color-scheme:dark;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:#080d17;color:#eff4ff}*{box-sizing:border-box}body{margin:0}.shell{max-width:1150px;margin:auto;padding:28px 24px}.top{display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:1px solid #273348;padding-bottom:21px;flex-wrap:wrap}.brand{font-weight:850;letter-spacing:.06em}.brand span{color:#57d8d0}.tag{font-size:12px;color:#aebcd5;border:1px solid #33435e;border-radius:999px;padding:7px 10px}h1{margin:38px 0 8px;font-size:clamp(30px,5vw,54px);letter-spacing:-.045em}p{color:#a4b0c8;line-height:1.6}.lead{max-width:660px}.toolbar{display:flex;align-items:center;gap:14px;margin:28px 0;flex-wrap:wrap}.toolbar label{font-size:14px;color:#b6c5dc}.toolbar select{background:#14223a;color:white;padding:12px 15px;border-radius:10px;border:1px solid #445575}.channels{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:16px}.channel{background:#111d30;border:1px solid #30405c;border-radius:16px;padding:20px;min-height:185px;display:flex;flex-direction:column;align-items:flex-start}.channel:hover{border-color:#66d4ce}.emoji{font-size:36px;margin-bottom:14px}.name{font-weight:750;font-size:18px}.subtitle{font-size:13px;color:#afc0d6;margin-top:6px}.channel button{border:0;border-radius:8px;margin-top:auto;background:#204455;color:#b4f9ed;padding:10px 14px;font-weight:700;cursor:pointer}.note{margin-top:30px;background:#1a2639;border-left:4px solid #51d1c2;padding:16px;border-radius:6px;color:#d0d9e8;font-size:14px}.message{min-height:24px;margin-top:12px;color:#ffe2a8;font-size:14px}footer{border-top:1px solid #273348;padding-top:24px;margin-top:40px;color:#8192ad;font-size:13px}
-.account{margin-top:24px}.account form:not([hidden]){display:flex;flex-wrap:wrap;gap:12px;align-items:end}.account label{display:grid;gap:5px;font-size:14px}.account input,.account button{font:inherit;padding:9px 12px;border:1px solid #445575;border-radius:8px;background:#14223a;color:#eff4ff;max-width:100%}.account button{cursor:pointer;background:#204455;color:#b4f9ed}.account button:disabled{opacity:.65}.account [role=status]:not(:empty){margin-top:10px}.access-status{margin-bottom:0;font-size:14px;color:#b4f9ed}
-.programme-guide{margin:12px 0 0;font-size:14px;color:#dce6f6;line-height:1.5}.programme-guide div+div{margin-top:5px}.programme-guide dt{display:inline;font-weight:750}.programme-guide dd{display:inline;margin:0}.guide-note{margin:0 0 14px;font-size:14px}
-.catalog-search{font:inherit;background:#14223a;color:white;padding:10px 12px;border:1px solid #445575;border-radius:10px;max-width:100%}.favorites-filter{display:inline-flex;align-items:center;gap:6px}.channel[hidden]{display:none}.channel .favorite{margin-top:12px}.channel .favorite[aria-pressed=true]{outline:1px solid #66d4ce}
-</style></head><body><main class="shell"><header class="top"><div class="brand"><span>◉</span> <span id="brand">YOUR IPTV BRAND</span></div><div class="tag">DEVELOPMENT DEMO • NO LIVE CONTENT</div></header><h1>Television, your way.</h1><p class="lead">A starting interface for your future U.S. and Nigeria IPTV subscription service. These fictional channels are placeholders, not licensed live streams.</p><section class="account" aria-label="Demo account">
-<form id="sign-in"><label>Email <input name="email" type="email" autocomplete="username" required maxlength="254"></label>
-<label>Password <input name="password" type="password" autocomplete="current-password" required maxlength="256"></label>
-<button type="submit">Sign in</button></form>
-<button id="sign-out" type="button" hidden>Sign out</button>
-<div id="account" role="status"></div>
-<div id="plan-status" role="status" hidden></div>
-</section><div class="toolbar"><label for="country">Preview catalog for</label><select id="country"><option value="US">🇺🇸 United States</option><option value="NG">🇳🇬 Nigeria</option></select>
-<label for="channel-search">Search channels</label>
-<input class="catalog-search" id="channel-search" type="search" placeholder="Name or category" maxlength="100">
-<label class="favorites-filter"><input id="favorites-only" type="checkbox"> Favorites only</label>
-</div><p class="guide-note">Demo schedules · Times shown in your device’s time zone</p><section class="channels" id="channels" aria-label="Channel catalog"></section><div class="message" id="message" role="status"></div><p id="favorites-notice" role="status" hidden></p><div class="note">The production version will add commercial licensed streams, subscription payments, a programme guide, rights checks and secure playback tokens. Your country selector is a UI preview only and is <strong>not</strong> a substitute for server-enforced geo restrictions.</div><footer>Technology starter © 2026 • Not for commercial broadcast or public subscriptions</footer></main><script>
+:root {
+    color-scheme: dark;
+    font-family: system-ui, -apple-system, sans-serif;
+    color: #edf4f8;
+    background: #0a1018;
+    --surface: #111d2a;
+    --edge: #304352;
+    --muted: #aebfcb;
+    --accent: #90e3cf;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; }
+a { color: var(--accent); text-underline-offset: 4px; }
+a, button, input, select { touch-action: manipulation; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.shell { width: min(1200px, calc(100% - 48px)); margin: auto; }
+.site-header { border-bottom: 1px solid var(--edge); background: #0d1721; }
+.top { min-height: 68px; display: flex; justify-content: space-between; align-items: center; gap: 14px; }
+.brand { font-weight: 800; letter-spacing: -.02em; color: #edf4f8; text-decoration: none; }
+.brand-mark { color: var(--accent); margin-right: 5px; }
+nav { display: flex; flex-wrap: wrap; gap: 18px; }
+nav a { color: var(--muted); font-size: .9rem; }
+nav a[aria-current] { color: var(--accent); }
+.intro { padding: clamp(32px, 6vw, 65px) 0 24px; }
+h1 { margin: 0 0 8px; font-size: clamp(2.5rem, 6vw, 4.3rem); letter-spacing: -.055em; line-height: 1; }
+p { color: var(--muted); line-height: 1.5; }
+.intro p { margin: 0; }
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 280px); align-items: start; gap: 24px; }
+.catalog, .account { min-width: 0; }
+.account { padding: 20px; border: 1px solid var(--edge); border-radius: 16px; background: var(--surface); }
+.account h2 { margin: 0 0 16px; font-size: 1.15rem; }
+.account form { display: grid; gap: 12px; }
+.account label, .field { display: grid; min-width: 0; gap: 6px; font-size: .88rem; font-weight: 650; }
+.account input, .field input, .field select {
+    width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid #506374;
+    border-radius: 8px; background: #091521; color: inherit; font: inherit;
+}
+button {
+    font: inherit; font-weight: 700; color: #0b231f; background: var(--accent);
+    border: 1px solid transparent; border-radius: 8px; padding: 9px 12px; cursor: pointer;
+}
+button:disabled { cursor: default; opacity: .55; }
+.account [role=status]:not(:empty) { margin-top: 10px; overflow-wrap: anywhere; color: var(--muted); font-size: .9rem; }
+.toolbar { display: grid; grid-template-columns: minmax(150px, .9fr) minmax(150px, 1.2fr) auto; gap: 12px; align-items: end; }
+.favorites-filter { display: flex; align-items: center; gap: 6px; padding: 10px 2px; font-size: .88rem; font-weight: 650; white-space: nowrap; }
+.favorites-filter input { accent-color: var(--accent); }
+.guide-note { margin: 14px 0; font-size: .83rem; }
+.channels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 14px; }
+.channel { min-width: 0; display: flex; flex-direction: column; padding: 17px; border: 1px solid var(--edge); border-radius: 14px; background: var(--surface); }
+.channel-heading { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.emoji { display: grid; place-items: center; flex: 0 0 46px; height: 46px; font-size: 25px; background: #213a45; border-radius: 10px; }
+.name { margin: 0; font-size: 1.02rem; }
+.subtitle { color: var(--muted); margin-top: 3px; font-size: .83rem; }
+.programme-guide { margin: 16px 0; padding-top: 12px; border-top: 1px solid var(--edge); font-size: .85rem; line-height: 1.55; }
+.programme-guide div + div { margin-top: 5px; }
+.programme-guide dt { display: inline; font-weight: 750; }
+.programme-guide dd { display: inline; margin: 0; color: var(--muted); }
+.access-status { margin: 0 0 12px; padding: 7px 9px; border-radius: 7px; background: #212f3b; font-size: .82rem; }
+.access-status[data-state=allowed] { background: #123e35; color: #b0f1dc; }
+.access-status[data-state=unavailable] { background: #3e2e1c; color: #ffe0ac; }
+.card-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; }
+.card-actions a, .channel .favorite { font-size: .83rem; }
+.channel .favorite, .secondary { color: var(--accent); border-color: #446171; background: #152a37; }
+.channel .favorite[aria-pressed=true] { background: #284d48; border-color: var(--accent); }
+.message { margin-top: 14px; color: #ffe0ac; }
+footer { border-top: 1px solid var(--edge); margin-top: 36px !important; padding: 18px 0 28px; color: var(--muted); font-size: .83rem; }
+@media (max-width: 900px) {
+    .workspace { grid-template-columns: minmax(0, 1fr); }
+    .account { scroll-margin-top: 18px; }
+    .account form { grid-template-columns: 1fr 1fr auto; align-items: end; }
+}
+@media (max-width: 560px) {
+    .shell { width: calc(100% - 28px); }
+    .top { min-height: 62px; }
+    nav { gap: 10px; }
+    .toolbar { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .favorites-filter { grid-column: 1 / -1; }
+    .account form { grid-template-columns: minmax(0, 1fr); }
+}
+</style>
+</head>
+<body>
+<header class="site-header">
+<div class="shell top">
+    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">◉</span><span id="brand">TV launch preview</span></a>
+    <nav aria-label="Main navigation"><a href="/catalog" aria-current="page">Catalog</a><a href="#account-panel">Account</a></nav>
+</div>
+</header>
+<main class="shell">
+<section class="intro" aria-labelledby="catalog-title">
+    <h1 id="catalog-title">Channel catalog</h1>
+    <p>Demo channels and schedules. Live playback is unavailable.</p>
+</section>
+<div class="workspace">
+    <section class="catalog" aria-label="Browse channels">
+        <div class="toolbar">
+            <label class="field">Country<select id="country"><option value="US">United States</option><option value="NG">Nigeria</option></select></label>
+            <label class="field">Search channels<input id="channel-search" type="search" placeholder="Name or category" maxlength="100"></label>
+            <label class="favorites-filter"><input id="favorites-only" type="checkbox"> Favorites only</label>
+        </div>
+        <p class="guide-note">Programme times use your device’s time zone.</p>
+        <section class="channels" id="channels" aria-label="Channel results"></section>
+        <p class="message" id="message" role="status"></p>
+        <button class="secondary" id="retry-catalog" type="button" hidden>Retry catalog</button>
+        <p id="favorites-notice" role="status" hidden></p>
+    </section>
+    <section class="account" id="account-panel" aria-labelledby="account-title">
+        <h2 id="account-title">Subscriber account</h2>
+        <form id="sign-in">
+            <label>Email<input name="email" type="email" autocomplete="username" required maxlength="254"></label>
+            <label>Password<input name="password" type="password" autocomplete="current-password" required maxlength="256"></label>
+            <button type="submit">Sign in</button>
+        </form>
+        <button id="sign-out" type="button" hidden>Sign out</button>
+        <div id="account" role="status"></div>
+        <div id="plan-status" role="status" hidden></div>
+    </section>
+</div>
+</main>
+<footer class="shell"><a href="/">Back to the launch homepage</a></footer>
+<script>
 const country = document.querySelector('#country');
 const initialCountry = new URLSearchParams(window.location.search).get('country');
 if (initialCountry === 'US' || initialCountry === 'NG') country.value = initialCountry;
 const channels = document.querySelector('#channels');
 const message = document.querySelector('#message');
+const retryCatalog = document.querySelector('#retry-catalog');
 const form = document.querySelector('#sign-in');
 const signOut = document.querySelector('#sign-out');
 const account = document.querySelector('#account');
@@ -227,7 +338,7 @@ async function loadProfile(token) {
 }
 
 async function channelStatus(channelId, region, token) {
-    if (!token) return 'Sign in to check channel access';
+    if (!token) return {text: 'Sign in to check channel access', state: 'guest'};
 
     const response = await fetch(
         '/api/v1/channels/' + encodeURIComponent(channelId) +
@@ -235,12 +346,12 @@ async function channelStatus(channelId, region, token) {
         {headers: {Authorization: 'Bearer ' + token}},
     );
     switch (response.status) {
-        case 200: return 'Covered by your plan';
-        case 403: return 'Unavailable with your plan in this catalog';
+        case 200: return {text: 'Covered by your plan', state: 'allowed'};
+        case 403: return {text: 'Plan does not cover this channel', state: 'unavailable'};
         case 401:
             clearSession(token, 'Your session ended. Please sign in again.');
-            return 'Sign in to check channel access';
-        default: return 'Channel access could not be checked';
+            return {text: 'Sign in to check channel access', state: 'guest'};
+        default: return {text: 'Channel access could not be checked', state: 'unknown'};
     }
 }
 
@@ -250,6 +361,7 @@ async function loadCatalog() {
     const region = country.value;
     const token = accessToken;
     channels.replaceChildren();
+    retryCatalog.hidden = true;
     message.textContent = 'Loading catalog…';
 
     try {
@@ -263,16 +375,21 @@ async function loadCatalog() {
             card.className = 'channel';
             card.dataset.channelId = channel.id;
             card.dataset.search = (channel.name + ' ' + channel.category).toLowerCase();
-            for (const [className, value] of [
-                ['emoji', channel.icon],
-                ['name', channel.name],
-                ['subtitle', channel.category],
-            ]) {
-                const field = document.createElement('div');
-                field.className = className;
-                field.textContent = value;
-                card.append(field);
-            }
+            const heading = document.createElement('div');
+            heading.className = 'channel-heading';
+            const icon = document.createElement('span');
+            icon.className = 'emoji';
+            icon.setAttribute('aria-hidden', 'true');
+            icon.textContent = channel.icon;
+            const description = document.createElement('div');
+            const name = document.createElement('h2');
+            name.className = 'name';
+            name.textContent = channel.name;
+            const category = document.createElement('div');
+            category.className = 'subtitle';
+            category.textContent = channel.category;
+            description.append(name, category);
+            heading.append(icon, description);
             const status = document.createElement('p');
             status.className = 'access-status';
             status.setAttribute('role', 'status');
@@ -280,12 +397,17 @@ async function loadCatalog() {
             const scheduleLink = document.createElement('a');
             scheduleLink.href = '/catalog/channel?' + new URLSearchParams({channel_id: channel.id, country: region});
             scheduleLink.textContent = 'View schedule';
-            scheduleLink.style.marginTop = '12px';
             scheduleLink.setAttribute('aria-label', 'View schedule for ' + channel.name);
-            card.append(renderGuide(channel.guide), scheduleLink, status, favoriteButton(channel));
+            const actions = document.createElement('div');
+            actions.className = 'card-actions';
+            actions.append(scheduleLink, favoriteButton(channel));
+            card.append(heading, renderGuide(channel.guide), status, actions);
             channels.append(card);
             channelStatus(channel.id, region, token)
-                .then(text => { status.textContent = text; })
+                .then(result => {
+                    status.textContent = result.text;
+                    status.dataset.state = result.state;
+                })
                 .catch(() => { status.textContent = 'Channel access could not be checked'; });
         }
         const nextShow = payload.channels[0]?.guide.next.starts_at;
@@ -295,7 +417,10 @@ async function loadCatalog() {
         message.textContent = payload.channels.length ? '' : 'No demo channels are available.';
         filterCatalog();
     } catch {
-        if (request === catalogRequest) message.textContent = 'Unable to load the catalog. Check that the API is running.';
+        if (request === catalogRequest) {
+            message.textContent = 'Unable to load the catalog. Check that the API is running.';
+            retryCatalog.hidden = false;
+        }
     }
 }
 
@@ -366,12 +491,18 @@ signOut.addEventListener('click', async () => {
     clearSession(token, 'Signed out.');
 });
 
-country.addEventListener('change', loadCatalog);
+country.addEventListener('change', () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('country', country.value);
+    history.replaceState(null, '', url);
+    loadCatalog();
+});
+retryCatalog.addEventListener('click', loadCatalog);
 search.addEventListener('input', filterCatalog);
 favoritesOnly.addEventListener('change', filterCatalog);
 fetch('/api/v1/config')
     .then(response => response.ok ? response.json() : null)
-    .then(config => { if (config) document.querySelector('#brand').textContent = config.brand; })
+    .then(config => { if (config && config.brand !== 'YOUR IPTV BRAND') document.querySelector('#brand').textContent = config.brand; })
     .catch(() => {});
 loadCatalog();
 </script></body></html>
