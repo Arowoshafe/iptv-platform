@@ -40,3 +40,14 @@ def test_demo_guide_rolls_over_at_midnight():
     for channel in channels:
         assert channel["guide"]["now"]["title"] == channel["epg_now"]
         assert "programmes" not in channel
+
+
+def test_playback_tester_is_available_only_when_enabled(monkeypatch):
+    monkeypatch.delenv("ENABLE_LOCAL_PLAYLIST_TESTER", raising=False)
+    assert client.get("/playlist-tester").status_code == 404
+
+    monkeypatch.setenv("ENABLE_LOCAL_PLAYLIST_TESTER", "1")
+    response = client.get("/playlist-tester")
+    assert response.status_code == 200
+    assert "Play Apple HLS sample" in response.text
+    assert "Play test URL" in response.text

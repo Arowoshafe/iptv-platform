@@ -39,8 +39,15 @@ loads the demo plan fixture, and runs the full test suite. It removes its
 temporary containers and database volume on exit, including when tests fail.
 Your development database and its credentials are independent of this run.
 
-Expected: **10 passed**. On a Linux CI runner with Docker Compose and OpenSSL,
+Expected: **11 passed**. On a Linux CI runner with Docker Compose and OpenSSL,
 run `bash scripts/test-fresh-db.sh` to use the runner's default Docker context.
+
+### Check playback with an authorized test feed
+
+With the local Compose stack running, open
+`http://127.0.0.1:8000/playlist-tester` in Safari. Start with the bundled Apple
+HLS sample, then try a direct test URL or import an M3U channel list.
+The browser connects to the selected source. The API does not store those URLs.
 
 ### View launch waitlist totals
 
