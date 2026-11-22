@@ -79,20 +79,44 @@ def login(body: LoginRequest, response: Response):
     return {"access_token": token, "token_type": "bearer", "expires_in": SESSION_SECONDS}
 
 
+def session_required() -> HTTPException:
+    return HTTPException(
+        status_code=401,
+        detail="A valid subscriber session is required",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def session_token_hash(credentials: HTTPAuthorizationCredentials | None) -> bytes:
+    if credentials is None or len(credentials.credentials) != 43:
+        raise session_required()
+
+    return hashlib.sha256(credentials.credentials.encode("utf-8")).digest()
+
+
+@router.post("/api/v1/auth/logout", status_code=204)
+def logout(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+) -> Response:
+    token_hash = session_token_hash(credentials)
+    try:
+        with connect_db() as conn:
+            conn.execute(
+                "DELETE FROM subscriber_sessions WHERE token_hash = %s",
+                (token_hash,),
+            )
+    except (KeyError, psycopg.Error):
+        raise HTTPException(status_code=503, detail="Sign-out is temporarily unavailable") from None
+
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
+
+
 @router.get("/api/v1/subscriber/me")
 def subscriber_profile(
     response: Response,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
 ):
-    unauthorized = HTTPException(
-        status_code=401,
-        detail="A valid subscriber session is required",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    if credentials is None or len(credentials.credentials) != 43:
-        raise unauthorized
-
-    token_hash = hashlib.sha256(credentials.credentials.encode("utf-8")).digest()
+    token_hash = session_token_hash(credentials)
     try:
         with connect_db() as conn:
             rows = conn.execute(
@@ -119,7 +143,7 @@ def subscriber_profile(
         raise HTTPException(status_code=503, detail="Subscriber profile is temporarily unavailable") from None
 
     if not rows:
-        raise unauthorized
+        raise session_required()
 
     response.headers["Cache-Control"] = "no-store"
     return {"email": rows[0][0], "active_plans": [code for _, code in rows if code is not None]}
