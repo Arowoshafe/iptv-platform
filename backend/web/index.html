@@ -4,6 +4,7 @@
 :root{color-scheme:dark;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:#080d17;color:#eff4ff}*{box-sizing:border-box}body{margin:0}.shell{max-width:1150px;margin:auto;padding:28px 24px}.top{display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:1px solid #273348;padding-bottom:21px;flex-wrap:wrap}.brand{font-weight:850;letter-spacing:.06em}.brand span{color:#57d8d0}.tag{font-size:12px;color:#aebcd5;border:1px solid #33435e;border-radius:999px;padding:7px 10px}h1{margin:38px 0 8px;font-size:clamp(30px,5vw,54px);letter-spacing:-.045em}p{color:#a4b0c8;line-height:1.6}.lead{max-width:660px}.toolbar{display:flex;align-items:center;gap:14px;margin:28px 0;flex-wrap:wrap}.toolbar label{font-size:14px;color:#b6c5dc}.toolbar select{background:#14223a;color:white;padding:12px 15px;border-radius:10px;border:1px solid #445575}.channels{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:16px}.channel{background:#111d30;border:1px solid #30405c;border-radius:16px;padding:20px;min-height:185px;display:flex;flex-direction:column;align-items:flex-start}.channel:hover{border-color:#66d4ce}.emoji{font-size:36px;margin-bottom:14px}.name{font-weight:750;font-size:18px}.subtitle{font-size:13px;color:#afc0d6;margin-top:6px}.channel button{border:0;border-radius:8px;margin-top:auto;background:#204455;color:#b4f9ed;padding:10px 14px;font-weight:700;cursor:pointer}.note{margin-top:30px;background:#1a2639;border-left:4px solid #51d1c2;padding:16px;border-radius:6px;color:#d0d9e8;font-size:14px}.message{min-height:24px;margin-top:12px;color:#ffe2a8;font-size:14px}footer{border-top:1px solid #273348;padding-top:24px;margin-top:40px;color:#8192ad;font-size:13px}
 .account{margin-top:24px}.account form:not([hidden]){display:flex;flex-wrap:wrap;gap:12px;align-items:end}.account label{display:grid;gap:5px;font-size:14px}.account input,.account button{font:inherit;padding:9px 12px;border:1px solid #445575;border-radius:8px;background:#14223a;color:#eff4ff;max-width:100%}.account button{cursor:pointer;background:#204455;color:#b4f9ed}.account button:disabled{opacity:.65}.account [role=status]:not(:empty){margin-top:10px}.access-status{margin-bottom:0;font-size:14px;color:#b4f9ed}
 .programme-guide{margin:12px 0 0;font-size:14px;color:#dce6f6;line-height:1.5}.programme-guide div+div{margin-top:5px}.programme-guide dt{display:inline;font-weight:750}.programme-guide dd{display:inline;margin:0}.guide-note{margin:0 0 14px;font-size:14px}
+.catalog-search{font:inherit;background:#14223a;color:white;padding:10px 12px;border:1px solid #445575;border-radius:10px;max-width:100%}.favorites-filter{display:inline-flex;align-items:center;gap:6px}.channel[hidden]{display:none}.channel .favorite{margin-top:12px}.channel .favorite[aria-pressed=true]{outline:1px solid #66d4ce}
 </style></head><body><main class="shell"><header class="top"><div class="brand"><span>◉</span> <span id="brand">YOUR IPTV BRAND</span></div><div class="tag">DEVELOPMENT DEMO • NO LIVE CONTENT</div></header><h1>Television, your way.</h1><p class="lead">A starting interface for your future U.S. and Nigeria IPTV subscription service. These fictional channels are placeholders, not licensed live streams.</p><section class="account" aria-label="Demo account">
 <form id="sign-in"><label>Email <input name="email" type="email" autocomplete="username" required maxlength="254"></label>
 <label>Password <input name="password" type="password" autocomplete="current-password" required maxlength="256"></label>
@@ -11,7 +12,11 @@
 <button id="sign-out" type="button" hidden>Sign out</button>
 <div id="account" role="status"></div>
 <div id="plan-status" role="status" hidden></div>
-</section><div class="toolbar"><label for="country">Preview catalog for</label><select id="country"><option value="US">🇺🇸 United States</option><option value="NG">🇳🇬 Nigeria</option></select></div><p class="guide-note">Demo schedules · Times shown in your device’s time zone</p><section class="channels" id="channels" aria-label="Channel catalog"></section><div class="message" id="message" role="status"></div><div class="note">The production version will add commercial licensed streams, subscription payments, a programme guide, rights checks and secure playback tokens. Your country selector is a UI preview only and is <strong>not</strong> a substitute for server-enforced geo restrictions.</div><footer>Technology starter © 2026 • Not for commercial broadcast or public subscriptions</footer></main><script>
+</section><div class="toolbar"><label for="country">Preview catalog for</label><select id="country"><option value="US">🇺🇸 United States</option><option value="NG">🇳🇬 Nigeria</option></select>
+<label for="channel-search">Search channels</label>
+<input class="catalog-search" id="channel-search" type="search" placeholder="Name or category" maxlength="100">
+<label class="favorites-filter"><input id="favorites-only" type="checkbox"> Favorites only</label>
+</div><p class="guide-note">Demo schedules · Times shown in your device’s time zone</p><section class="channels" id="channels" aria-label="Channel catalog"></section><div class="message" id="message" role="status"></div><div class="note">The production version will add commercial licensed streams, subscription payments, a programme guide, rights checks and secure playback tokens. Your country selector is a UI preview only and is <strong>not</strong> a substitute for server-enforced geo restrictions.</div><footer>Technology starter © 2026 • Not for commercial broadcast or public subscriptions</footer></main><script>
 const country = document.querySelector('#country');
 const channels = document.querySelector('#channels');
 const message = document.querySelector('#message');
@@ -23,6 +28,63 @@ let accessToken = '';
 let sessionTimer;
 let catalogRequest = 0;
 let guideTimer;
+const search = document.querySelector('#channel-search');
+const favoritesOnly = document.querySelector('#favorites-only');
+const favoritesKey = 'iptv-demo-favorites';
+const favorites = readFavorites();
+
+function readFavorites() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(favoritesKey));
+        return new Set(Array.isArray(saved) ? saved.filter(id => typeof id === 'string') : []);
+    } catch {
+        return new Set();
+    }
+}
+
+function syncFavorite(button, channel) {
+    const saved = favorites.has(channel.id);
+    button.setAttribute('aria-pressed', String(saved));
+    button.textContent = saved ? '★ Favorite' : '☆ Favorite';
+}
+
+function filterCatalog() {
+    const cards = Array.from(channels.children);
+    if (!cards.length) return;
+
+    const query = search.value.trim().toLowerCase();
+    let visible = 0;
+    for (const card of cards) {
+        const matches = card.dataset.search.includes(query);
+        const saved = favorites.has(card.dataset.channelId);
+        card.hidden = !matches || (favoritesOnly.checked && !saved);
+        if (!card.hidden) visible++;
+    }
+
+    message.textContent = visible
+        ? ''
+        : favoritesOnly.checked ? 'No favorites match this catalog and search.' : 'No channels match your search.';
+}
+
+function favoriteButton(channel) {
+    const button = document.createElement('button');
+    button.className = 'favorite';
+    button.type = 'button';
+    button.setAttribute('aria-label', 'Favorite ' + channel.name);
+    syncFavorite(button, channel);
+    button.addEventListener('click', () => {
+        if (!favorites.delete(channel.id)) favorites.add(channel.id);
+        syncFavorite(button, channel);
+        filterCatalog();
+        if (button.closest('article').hidden) favoritesOnly.focus();
+        try {
+            localStorage.setItem(favoritesKey, JSON.stringify([...favorites]));
+        } catch {
+            message.textContent = 'Browser storage is unavailable. Favorites will last until refresh.';
+        }
+    });
+    return button;
+}
 const guideTime = new Intl.DateTimeFormat(undefined, {hour: 'numeric', minute: '2-digit'});
 
 function renderGuide(guide) {
@@ -111,6 +173,8 @@ async function loadCatalog() {
         for (const channel of payload.channels) {
             const card = document.createElement('article');
             card.className = 'channel';
+            card.dataset.channelId = channel.id;
+            card.dataset.search = (channel.name + ' ' + channel.category).toLowerCase();
             for (const [className, value] of [
                 ['emoji', channel.icon],
                 ['name', channel.name],
@@ -125,7 +189,7 @@ async function loadCatalog() {
             status.className = 'access-status';
             status.setAttribute('role', 'status');
             status.textContent = 'Checking access…';
-            card.append(renderGuide(channel.guide), status);
+            card.append(renderGuide(channel.guide), status, favoriteButton(channel));
             channels.append(card);
             channelStatus(channel.id, region, token)
                 .then(text => { status.textContent = text; })
@@ -136,6 +200,7 @@ async function loadCatalog() {
             guideTimer = setTimeout(loadCatalog, Math.max(30_000, Date.parse(nextShow) - Date.now() + 1000));
         }
         message.textContent = payload.channels.length ? '' : 'No demo channels are available.';
+        filterCatalog();
     } catch {
         if (request === catalogRequest) message.textContent = 'Unable to load the catalog. Check that the API is running.';
     }
@@ -204,6 +269,8 @@ signOut.addEventListener('click', async () => {
 });
 
 country.addEventListener('change', loadCatalog);
+search.addEventListener('input', filterCatalog);
+favoritesOnly.addEventListener('change', filterCatalog);
 fetch('/api/v1/config')
     .then(response => response.ok ? response.json() : null)
     .then(config => { if (config) document.querySelector('#brand').textContent = config.brand; })
