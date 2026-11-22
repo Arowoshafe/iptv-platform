@@ -3,15 +3,20 @@ import hashlib
 import hmac
 import os
 import secrets
+from threading import BoundedSemaphore
 from typing import Annotated
 
 import psycopg
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, StringConstraints
 
 router = APIRouter()
 SESSION_SECONDS = 900
+LOGIN_WINDOW_SECONDS = 300
+LOGIN_CLIENT_LIMIT = 60
+LOGIN_EMAIL_LIMIT = 5
+login_slots = BoundedSemaphore(2)
 bearer = HTTPBearer(auto_error=False)
 
 
@@ -53,15 +58,72 @@ def connect_db():
 )
 
 
+def reserve_login_attempt(client_host: str, email: str) -> None:
+    key_specs = (
+        ("client", client_host, LOGIN_CLIENT_LIMIT),
+        ("email", client_host + "\0" + email, LOGIN_EMAIL_LIMIT),
+    )
+    allowed = True
+    with connect_db() as conn:
+        # Always lock buckets in the same order. Commit the reservation before
+        # computing the password hash so failed logins count too.
+        conn.execute(
+            "DELETE FROM login_rate_limits WHERE limit_key IN ("
+            "SELECT limit_key FROM login_rate_limits WHERE expires_at <= statement_timestamp() "
+            "ORDER BY expires_at LIMIT 32 FOR UPDATE SKIP LOCKED)"
+        )
+        for scope, value, limit in key_specs:
+            key = scope + ":" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+            bucket = conn.execute(
+                """
+                INSERT INTO login_rate_limits (limit_key, attempts, expires_at)
+                VALUES (%s, 1, statement_timestamp() + make_interval(secs => %s))
+                ON CONFLICT (limit_key) DO UPDATE SET
+                    attempts = CASE
+                        WHEN login_rate_limits.expires_at <= statement_timestamp() THEN 1
+                        ELSE login_rate_limits.attempts + 1
+                    END,
+                    expires_at = CASE
+                        WHEN login_rate_limits.expires_at <= statement_timestamp() THEN EXCLUDED.expires_at
+                        ELSE login_rate_limits.expires_at
+                    END
+                WHERE login_rate_limits.expires_at <= statement_timestamp()
+                   OR login_rate_limits.attempts < %s
+                RETURNING attempts
+                """,
+                (key, LOGIN_WINDOW_SECONDS, limit),
+            ).fetchone()
+            if bucket is None:
+                allowed = False
+                break
+
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many sign-in attempts. Try again in five minutes.",
+            headers={"Retry-After": str(LOGIN_WINDOW_SECONDS), "Cache-Control": "no-store"},
+        )
+
+
 @router.post("/api/v1/auth/login")
-def login(body: LoginRequest, response: Response):
+def login(body: LoginRequest, request: Request, response: Response):
+    if not login_slots.acquire(blocking=False):
+        raise HTTPException(
+            status_code=503,
+            detail="Sign-in is busy. Try again shortly.",
+            headers={"Retry-After": "1", "Cache-Control": "no-store"},
+        )
+
     try:
+        host = request.client.host if request.client else "unknown"
+        email = body.email.lower()
+        reserve_login_attempt(host, email)
         with connect_db() as conn:
             row = conn.execute(
                 "SELECT s.id, c.password_hash FROM subscribers s "
                 "JOIN subscriber_credentials c ON c.subscriber_id = s.id "
                 "WHERE s.email = %s",
-                (body.email.lower(),),
+                (email,),
             ).fetchone()
             if not password_matches(body.password, row[1] if row else None):
                 raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -74,6 +136,8 @@ def login(body: LoginRequest, response: Response):
             )
     except (KeyError, psycopg.Error):
         raise HTTPException(status_code=503, detail="Sign-in is temporarily unavailable") from None
+    finally:
+        login_slots.release()
 
     response.headers["Cache-Control"] = "no-store"
     return {"access_token": token, "token_type": "bearer", "expires_in": SESSION_SECONDS}
