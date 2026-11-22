@@ -3,15 +3,20 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Literal
-from fastapi import FastAPI, HTTPException, Query
+from typing import Annotated, Literal
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
+
+from .auth import router as auth_router
+from .auth import subscriber_profile
 
 APP_NAME = os.getenv("APP_NAME", "YOUR IPTV BRAND")
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 app = FastAPI(title=f"{APP_NAME} API", version="0.1.0")
+app.include_router(auth_router)
 Country = Literal["US", "NG"]
+DEMO_PLAN_TERRITORIES = {"demo-us": "US", "demo-ng": "NG"}
 
 # Fictional stations for interface and rights-filtering tests ONLY.
 # Do NOT add third-party streams without documentary redistribution rights.
@@ -63,6 +68,26 @@ def regions():
 @app.get("/api/v1/channels")
 def channels(country: Country = Query(default="US")):
     return {"country": country, "channels": [{k: v for k, v in c.items() if k != "countries"} for c in CHANNELS if country in c["countries"]]}
+
+@app.get("/api/v1/channels/{channel_id}/eligibility")
+def channel_eligibility(
+    channel_id: str,
+    country: Country,
+    subscriber: Annotated[dict, Depends(subscriber_profile)],
+):
+    """Evaluate demo access for a requested catalog country."""
+    channel = next((item for item in CHANNELS if item["id"] == channel_id), None)
+    if channel is None:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    if country not in channel["countries"]:
+        raise HTTPException(status_code=403, detail="Channel unavailable in this demo territory")
+    if not any(
+        DEMO_PLAN_TERRITORIES.get(plan) == country
+        for plan in subscriber["active_plans"]
+    ):
+        raise HTTPException(status_code=403, detail="An active plan for this demo territory is required")
+    return {"channel_id": channel_id, "country": country, "eligible": True}
+
 
 @app.post("/api/v1/playback/session")
 def playback_session(_: PlaybackRequest):
