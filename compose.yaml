@@ -1,0 +1,42 @@
+name: iptv-platform
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      APP_NAME: ${APP_NAME:-YOUR IPTV BRAND}
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: iptv_dev
+      DB_USER: iptv_app
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Run scripts/setup.ps1 to create the .env file}
+    depends_on:
+      db:
+        condition: service_healthy
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: iptv_dev
+      POSTGRES_USER: iptv_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run scripts/setup.ps1 to create the .env file}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iptv_app -d iptv_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  dbdata:
