@@ -27,12 +27,20 @@ trap 'exit 143' TERM
 echo "Starting disposable database in $project"
 "${compose[@]}" up -d --wait --wait-timeout 120 db
 
-psql=("${compose[@]}" exec -T db psql -v ON_ERROR_STOP=1
-    --single-transaction -U iptv_app -d iptv_dev)
+migration_args=("$context" --env-file /dev/null --project-name "$project"
+    -f compose.yaml -f compose.test.yaml)
+bash scripts/migrate-db.sh "${migration_args[@]}"
+applied="$(bash scripts/migrate-db.sh "${migration_args[@]}")"
+printf '%s\n' "$applied"
 for migration in database/migrations/*.sql; do
-    echo "Applying $migration"
-    "${psql[@]}" < "$migration"
+    if ! grep -Fxq "Already applied ${migration##*/}" <<< "$applied"; then
+        echo "Migration was not recorded: $migration" >&2
+        exit 1
+    fi
 done
+
+psql=("${compose[@]}" exec -T db psql -X -v ON_ERROR_STOP=1
+    --single-transaction -U iptv_app -d iptv_dev -f -)
 "${psql[@]}" < database/test-fixtures.sql
 
 "${compose[@]}" run --build --rm --no-deps \

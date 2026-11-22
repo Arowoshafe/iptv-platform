@@ -17,7 +17,9 @@ cd ~/Developer/iptv-platform
 bash scripts/check-mac.sh
 bash scripts/setup-mac.sh
 docker compose -f compose.yaml -f compose.local.yaml config --quiet
-docker compose -f compose.yaml -f compose.local.yaml up -d --build
+docker compose -f compose.yaml -f compose.local.yaml up -d --wait db
+bash scripts/migrate-db.sh desktop-linux
+docker compose -f compose.yaml -f compose.local.yaml up -d --build api
 docker compose -f compose.yaml -f compose.local.yaml ps
 curl -fsS http://127.0.0.1:8000/health
 curl -fsS http://127.0.0.1:8000/ready
@@ -25,6 +27,19 @@ open http://127.0.0.1:8000/
 ```
 
 The API is bound to **127.0.0.1 only**. No LAN, router or public exposure. The `db` container has no published database port.
+
+### Apply database upgrades locally
+
+With the local PostgreSQL container running, run:
+
+```bash
+bash scripts/migrate-db.sh desktop-linux
+```
+
+The command records each migration after it succeeds. It skips migrations
+already recorded and stops if a recorded file's checksum changes. Add new
+migration files for later changes. On the first run, the existing idempotent
+migrations can be recorded on a database that was upgraded manually.
 
 ### Test against a fresh local database
 
@@ -35,7 +50,8 @@ bash scripts/test-fresh-db.sh desktop-linux
 ```
 
 The script starts PostgreSQL, applies the SQL migrations in filename order,
-loads the demo plan fixture, and runs the full test suite. It removes its
+verifies a second run skips each recorded migration, loads the demo plan
+fixture, and runs the full test suite. It removes its
 temporary containers and database volume on exit, including when tests fail.
 Your development database and its credentials are independent of this run.
 
