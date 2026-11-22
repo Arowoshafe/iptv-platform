@@ -8,9 +8,12 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
+from .auth import router as auth_router
+
 APP_NAME = os.getenv("APP_NAME", "YOUR IPTV BRAND")
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 app = FastAPI(title=f"{APP_NAME} API", version="0.1.0")
+app.include_router(auth_router)
 Country = Literal["US", "NG"]
 
 # Fictional stations for interface and rights-filtering tests ONLY.
