@@ -1,0 +1,73 @@
+name: Merge tested feature branches
+
+on:
+  workflow_run:
+    workflows: ["Fresh database tests"]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  queue-merge:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      startsWith(github.event.workflow_run.head_branch, 'feature/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    concurrency:
+      group: feature-merge-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: false
+    steps:
+      - name: Open pull request and enable auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.FEATURE_MERGE_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error::Set the FEATURE_MERGE_TOKEN repository secret."
+            exit 1
+          fi
+
+          current_sha="$(gh api "repos/$GH_REPO/git/matching-refs/heads/$BRANCH" |
+            jq -r --arg ref "refs/heads/$BRANCH" '.[] | select(.ref == $ref) | .object.sha')"
+          if [[ "$current_sha" != "$TESTED_SHA" ]]; then
+            echo "The feature branch moved or was deleted after this test run."
+            exit 0
+          fi
+
+          ahead="$(gh api "repos/$GH_REPO/compare/main...$TESTED_SHA" --jq .ahead_by)"
+          if [[ "$ahead" == 0 ]]; then
+            echo "This commit is already included in main."
+            exit 0
+          fi
+
+          find_pr() {
+            gh api -X GET "repos/$GH_REPO/pulls" \
+              -f state=open -f base=main -f "head=$REPO_OWNER:$BRANCH" \
+              --jq '.[0].number // empty'
+          }
+
+          pr="$(find_pr)"
+          if [[ -z "$pr" ]]; then
+            if ! pr="$(gh api -X POST "repos/$GH_REPO/pulls" \
+              -f "title=Merge $BRANCH" -f "head=$BRANCH" -f base=main \
+              -f 'body=Opened automatically after the feature branch passed Fresh database tests.' \
+              --jq .number)"; then
+              # A teammate may have opened the same pull request concurrently.
+              pr="$(find_pr)"
+              [[ -n "$pr" ]] || exit 1
+            fi
+          fi
+
+          draft="$(gh pr view "$pr" --json isDraft --jq .isDraft)"
+          if [[ "$draft" == true ]]; then
+            echo "Pull request #$pr is a draft."
+            exit 0
+          fi
+          gh pr merge "$pr" --auto --merge --match-head-commit "$TESTED_SHA"
