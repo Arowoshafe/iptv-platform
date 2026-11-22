@@ -2,8 +2,127 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Streaming platform starter</title>
 <style>
 :root{color-scheme:dark;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:#080d17;color:#eff4ff}*{box-sizing:border-box}body{margin:0}.shell{max-width:1150px;margin:auto;padding:28px 24px}.top{display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:1px solid #273348;padding-bottom:21px;flex-wrap:wrap}.brand{font-weight:850;letter-spacing:.06em}.brand span{color:#57d8d0}.tag{font-size:12px;color:#aebcd5;border:1px solid #33435e;border-radius:999px;padding:7px 10px}h1{margin:38px 0 8px;font-size:clamp(30px,5vw,54px);letter-spacing:-.045em}p{color:#a4b0c8;line-height:1.6}.lead{max-width:660px}.toolbar{display:flex;align-items:center;gap:14px;margin:28px 0;flex-wrap:wrap}.toolbar label{font-size:14px;color:#b6c5dc}.toolbar select{background:#14223a;color:white;padding:12px 15px;border-radius:10px;border:1px solid #445575}.channels{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:16px}.channel{background:#111d30;border:1px solid #30405c;border-radius:16px;padding:20px;min-height:185px;display:flex;flex-direction:column;align-items:flex-start}.channel:hover{border-color:#66d4ce}.emoji{font-size:36px;margin-bottom:14px}.name{font-weight:750;font-size:18px}.subtitle{font-size:13px;color:#afc0d6;margin-top:6px}.channel button{border:0;border-radius:8px;margin-top:auto;background:#204455;color:#b4f9ed;padding:10px 14px;font-weight:700;cursor:pointer}.note{margin-top:30px;background:#1a2639;border-left:4px solid #51d1c2;padding:16px;border-radius:6px;color:#d0d9e8;font-size:14px}.message{min-height:24px;margin-top:12px;color:#ffe2a8;font-size:14px}footer{border-top:1px solid #273348;padding-top:24px;margin-top:40px;color:#8192ad;font-size:13px}
-</style></head><body><main class="shell"><header class="top"><div class="brand"><span>◉</span> <span id="brand">YOUR IPTV BRAND</span></div><div class="tag">DEVELOPMENT DEMO • NO LIVE CONTENT</div></header><h1>Television, your way.</h1><p class="lead">A starting interface for your future U.S. and Nigeria IPTV subscription service. These fictional channels are placeholders, not licensed live streams.</p><div class="toolbar"><label for="country">Preview catalog for</label><select id="country"><option value="US">🇺🇸 United States</option><option value="NG">🇳🇬 Nigeria</option></select></div><section class="channels" id="channels" aria-label="Channel catalog"></section><div class="message" id="message" role="status"></div><div class="note">The production version will add commercial licensed streams, customer login, subscription payments, a programme guide, rights checks and secure playback tokens. Your country selector is a UI preview only and is <strong>not</strong> a substitute for server-enforced geo restrictions.</div><footer>Technology starter © 2026 • Not for commercial broadcast or public subscriptions</footer></main><script>
-const country=document.querySelector('#country'),channels=document.querySelector('#channels'),message=document.querySelector('#message');
-async function load(){message.textContent='';const r=await fetch('/api/v1/channels?country='+encodeURIComponent(country.value));const payload=await r.json();channels.replaceChildren();for(const ch of payload.channels){const e=document.createElement('article');e.className='channel';const emoji=document.createElement('div');emoji.className='emoji';emoji.textContent=ch.icon;const name=document.createElement('div');name.className='name';name.textContent=ch.name;const sub=document.createElement('div');sub.className='subtitle';sub.textContent=ch.category+' · '+ch.epg_now;const b=document.createElement('button');b.textContent='Preview status';b.onclick=async()=>{const response=await fetch('/api/v1/playback/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({channel_id:ch.id})});const data=await response.json();message.textContent=data.detail||'No playback configured';};e.append(emoji,name,sub,b);channels.append(e);} }
-async function init(){const r=await fetch('/api/v1/config');const c=await r.json();document.querySelector('#brand').textContent=c.brand;await load()} country.addEventListener('change',load);init().catch(()=>{message.textContent='Unable to reach API. Check that the server is running.'});
+.account{margin-top:24px}.account form:not([hidden]){display:flex;flex-wrap:wrap;gap:12px;align-items:end}.account label{display:grid;gap:5px;font-size:14px}.account input,.account button{font:inherit;padding:9px 12px;border:1px solid #445575;border-radius:8px;background:#14223a;color:#eff4ff;max-width:100%}.account button{cursor:pointer;background:#204455;color:#b4f9ed}.account button:disabled{opacity:.65}.account [role=status]:not(:empty){margin-top:10px}.access-status{margin-bottom:0;font-size:14px;color:#b4f9ed}
+</style></head><body><main class="shell"><header class="top"><div class="brand"><span>◉</span> <span id="brand">YOUR IPTV BRAND</span></div><div class="tag">DEVELOPMENT DEMO • NO LIVE CONTENT</div></header><h1>Television, your way.</h1><p class="lead">A starting interface for your future U.S. and Nigeria IPTV subscription service. These fictional channels are placeholders, not licensed live streams.</p><section class="account" aria-label="Demo account">
+<form id="sign-in"><label>Email <input name="email" type="email" autocomplete="username" required maxlength="254"></label>
+<label>Password <input name="password" type="password" autocomplete="current-password" required maxlength="256"></label>
+<button type="submit">Sign in</button></form>
+<button id="sign-out" type="button" hidden>Sign out</button>
+<div id="account" role="status"></div>
+</section><div class="toolbar"><label for="country">Preview catalog for</label><select id="country"><option value="US">🇺🇸 United States</option><option value="NG">🇳🇬 Nigeria</option></select></div><section class="channels" id="channels" aria-label="Channel catalog"></section><div class="message" id="message" role="status"></div><div class="note">The production version will add commercial licensed streams, subscription payments, a programme guide, rights checks and secure playback tokens. Your country selector is a UI preview only and is <strong>not</strong> a substitute for server-enforced geo restrictions.</div><footer>Technology starter © 2026 • Not for commercial broadcast or public subscriptions</footer></main><script>
+const country = document.querySelector('#country');
+const channels = document.querySelector('#channels');
+const message = document.querySelector('#message');
+const form = document.querySelector('#sign-in');
+const signOut = document.querySelector('#sign-out');
+const account = document.querySelector('#account');
+let accessToken = '';
+let catalogRequest = 0;
+
+async function channelStatus(channelId, region, token) {
+    if (!token) return 'Sign in to check channel access';
+
+    const response = await fetch(
+        '/api/v1/channels/' + encodeURIComponent(channelId) +
+        '/eligibility?country=' + encodeURIComponent(region),
+        {headers: {Authorization: 'Bearer ' + token}},
+    );
+    switch (response.status) {
+        case 200: return 'Covered by your plan';
+        case 403: return 'Unavailable with your plan in this catalog';
+        case 401: return 'Session expired. Sign out and sign in again.';
+        default: return 'Channel access could not be checked';
+    }
+}
+
+async function loadCatalog() {
+    const request = ++catalogRequest;
+    const region = country.value;
+    const token = accessToken;
+    channels.replaceChildren();
+    message.textContent = 'Loading catalog…';
+
+    try {
+        const response = await fetch('/api/v1/channels?country=' + encodeURIComponent(region));
+        if (!response.ok) throw new Error('Catalog request failed');
+        const payload = await response.json();
+        if (request !== catalogRequest) return;
+
+        for (const channel of payload.channels) {
+            const card = document.createElement('article');
+            card.className = 'channel';
+            for (const [className, value] of [
+                ['emoji', channel.icon],
+                ['name', channel.name],
+                ['subtitle', channel.category + ' · ' + channel.epg_now],
+            ]) {
+                const field = document.createElement('div');
+                field.className = className;
+                field.textContent = value;
+                card.append(field);
+            }
+            const status = document.createElement('p');
+            status.className = 'access-status';
+            status.setAttribute('role', 'status');
+            status.textContent = 'Checking access…';
+            card.append(status);
+            channels.append(card);
+            channelStatus(channel.id, region, token)
+                .then(text => { status.textContent = text; })
+                .catch(() => { status.textContent = 'Channel access could not be checked'; });
+        }
+        message.textContent = payload.channels.length ? '' : 'No demo channels are available.';
+    } catch {
+        if (request === catalogRequest) message.textContent = 'Unable to load the catalog. Check that the API is running.';
+    }
+}
+
+form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = form.querySelector('button');
+    const password = form.elements.namedItem('password');
+    button.disabled = true;
+    account.textContent = 'Signing in…';
+
+    try {
+        const response = await fetch('/api/v1/auth/login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({email: form.elements.namedItem('email').value, password: password.value}),
+        });
+        if (!response.ok) {
+            account.textContent = response.status === 401 ? 'Check your email and password.' : 'Sign-in is temporarily unavailable.';
+            return;
+        }
+
+        const session = await response.json();
+        accessToken = session.access_token;
+        form.hidden = true;
+        signOut.hidden = false;
+        account.textContent = 'Signed in as ' + form.elements.namedItem('email').value;
+        signOut.focus();
+        loadCatalog();
+    } catch {
+        account.textContent = 'Unable to sign in. Check that the API is running.';
+    } finally {
+        password.value = '';
+        button.disabled = false;
+    }
+});
+
+signOut.addEventListener('click', () => {
+    accessToken = '';
+    signOut.hidden = true;
+    form.hidden = false;
+    account.textContent = 'Signed out.';
+    form.elements.namedItem('email').focus();
+    loadCatalog();
+});
+
+country.addEventListener('change', loadCatalog);
+fetch('/api/v1/config')
+    .then(response => response.ok ? response.json() : null)
+    .then(config => { if (config) document.querySelector('#brand').textContent = config.brand; })
+    .catch(() => {});
+loadCatalog();
 </script></body></html>
