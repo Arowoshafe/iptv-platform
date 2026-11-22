@@ -101,3 +101,28 @@ def test_favorites_follow_the_subscriber_across_sessions(test_subscriber):
         assert second.delete(channel).status_code == 204
         assert second.delete(channel).status_code == 204
         assert first.get(favorites).json() == {"channel_ids": []}
+
+
+def test_password_change_revokes_all_sessions(test_subscriber):
+    email, password = test_subscriber
+    replacement = secrets.token_urlsafe(24)
+    login = "/api/v1/auth/login"
+    change = "/api/v1/auth/change-password"
+    body = {"current_password": password, "new_password": replacement}
+    with TestClient(app) as client:
+        assert client.post(change, json=body).status_code == 401
+        sessions = []
+        for _ in range(2):
+            response = client.post(login, json={"email": email, "password": password})
+            assert response.status_code == 200
+            sessions.append({"Authorization": "Bearer " + response.json()["access_token"]})
+
+        wrong = {**body, "current_password": "wrong"}
+        assert client.post(change, headers=sessions[0], json=wrong).status_code == 403
+        assert client.get("/api/v1/subscriber/me", headers=sessions[1]).status_code == 200
+
+        assert client.post(change, headers=sessions[0], json=body).status_code == 204
+        for headers in sessions:
+            assert client.get("/api/v1/subscriber/me", headers=headers).status_code == 401
+        assert client.post(login, json={"email": email, "password": password}).status_code == 401
+        assert client.post(login, json={"email": email, "password": replacement}).status_code == 200

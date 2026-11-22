@@ -5,6 +5,8 @@
 .account{margin-top:24px}.account form:not([hidden]){display:flex;flex-wrap:wrap;gap:12px;align-items:end}.account label{display:grid;gap:5px;font-size:14px}.account input,.account button{font:inherit;padding:9px 12px;border:1px solid #445575;border-radius:8px;background:#14223a;color:#eff4ff;max-width:100%}.account button{cursor:pointer;background:#204455;color:#b4f9ed}.account button:disabled{opacity:.65}.account [role=status]:not(:empty){margin-top:10px}.access-status{margin-bottom:0;font-size:14px;color:#b4f9ed}
 .programme-guide{margin:12px 0 0;font-size:14px;color:#dce6f6;line-height:1.5}.programme-guide div+div{margin-top:5px}.programme-guide dt{display:inline;font-weight:750}.programme-guide dd{display:inline;margin:0}.guide-note{margin:0 0 14px;font-size:14px}
 .catalog-search{font:inherit;background:#14223a;color:white;padding:10px 12px;border:1px solid #445575;border-radius:10px;max-width:100%}.favorites-filter{display:inline-flex;align-items:center;gap:6px}.channel[hidden]{display:none}.channel .favorite{margin-top:12px}.channel .favorite[aria-pressed=true]{outline:1px solid #66d4ce}
+#password-panel{margin-top:14px}#password-panel summary{cursor:pointer;color:#b4f9ed}
+#change-password{margin-top:12px}#password-status:empty{display:none}
 </style></head><body><main class="shell"><header class="top"><div class="brand"><span>◉</span> <span id="brand">YOUR IPTV BRAND</span></div><div class="tag">DEVELOPMENT DEMO • NO LIVE CONTENT</div></header><h1>Television, your way.</h1><p class="lead">A starting interface for your future U.S. and Nigeria IPTV subscription service. These fictional channels are placeholders, not licensed live streams.</p><section class="account" aria-label="Demo account">
 <form id="sign-in"><label>Email <input name="email" type="email" autocomplete="username" required maxlength="254"></label>
 <label>Password <input name="password" type="password" autocomplete="current-password" required maxlength="256"></label>
@@ -12,6 +14,15 @@
 <button id="sign-out" type="button" hidden>Sign out</button>
 <div id="account" role="status"></div>
 <div id="plan-status" role="status" hidden></div>
+<details id="password-panel" hidden>
+<summary>Change password</summary>
+<form id="change-password">
+<label>Current password <input name="current_password" type="password" autocomplete="current-password" required maxlength="256"></label>
+<label>New password <input name="new_password" type="password" autocomplete="new-password" required minlength="12" maxlength="256"></label>
+<button type="submit">Update password</button>
+</form>
+<p id="password-status" role="status"></p>
+</details>
 </section><div class="toolbar"><label for="country">Preview catalog for</label><select id="country"><option value="US">🇺🇸 United States</option><option value="NG">🇳🇬 Nigeria</option></select>
 <label for="channel-search">Search channels</label>
 <input class="catalog-search" id="channel-search" type="search" placeholder="Name or category" maxlength="100">
@@ -26,6 +37,9 @@ const form = document.querySelector('#sign-in');
 const signOut = document.querySelector('#sign-out');
 const account = document.querySelector('#account');
 const planStatus = document.querySelector('#plan-status');
+const passwordPanel = document.querySelector('#password-panel');
+const passwordForm = document.querySelector('#change-password');
+const passwordStatus = document.querySelector('#password-status');
 let accessToken = '';
 let sessionTimer;
 let catalogRequest = 0;
@@ -195,6 +209,10 @@ function clearSession(token, notice) {
     pendingFavorites.clear();
     showFavoritesNotice('');
     signOut.hidden = true;
+    passwordPanel.hidden = true;
+    passwordPanel.open = false;
+    passwordForm.reset();
+    passwordStatus.textContent = '';
     form.hidden = false;
     planStatus.hidden = true;
     planStatus.textContent = '';
@@ -322,6 +340,7 @@ form.addEventListener('submit', async event => {
         accessToken = token;
         form.hidden = true;
         signOut.hidden = false;
+        passwordPanel.hidden = false;
         account.textContent = 'Signed in.';
         planStatus.hidden = false;
         planStatus.textContent = 'Loading active plans…';
@@ -337,6 +356,47 @@ form.addEventListener('submit', async event => {
         account.textContent = 'Unable to sign in. Check that the API is running.';
     } finally {
         password.value = '';
+        button.disabled = false;
+    }
+});
+
+passwordForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const token = accessToken;
+    if (!token) return;
+
+    const button = passwordForm.querySelector('button');
+    const body = JSON.stringify(Object.fromEntries(new FormData(passwordForm)));
+    button.disabled = true;
+    passwordStatus.textContent = 'Updating password…';
+    passwordForm.reset();
+
+    try {
+        const response = await fetch('/api/v1/auth/change-password', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + token},
+            body,
+        });
+        if (token !== accessToken) return;
+        switch (response.status) {
+            case 204:
+                clearSession(token, 'Password updated. Sign in with your new password.');
+                break;
+            case 401:
+                clearSession(token, 'Your session ended. Please sign in again.');
+                break;
+            case 403:
+                passwordStatus.textContent = 'The current password is incorrect.';
+                break;
+            case 422:
+                passwordStatus.textContent = 'Choose a different new password with at least 12 characters.';
+                break;
+            default:
+                passwordStatus.textContent = 'Unable to update the password. Please try again.';
+        }
+    } catch {
+        if (token === accessToken) passwordStatus.textContent = 'Unable to reach the API. Please try again.';
+    } finally {
         button.disabled = false;
     }
 });
